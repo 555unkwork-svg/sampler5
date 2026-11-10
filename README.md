@@ -29,7 +29,7 @@ con una tipografia propia (Sampler5 Sans, generada por `Tools/make_font.py`).
 
 ### Escudo
 
-Abajo a la izquierda hay un lugar reservado. Para ponerlo, guardar la imagen como `Assets/escudo.png`
+El escudo de abajo a la izquierda es `Assets/escudo.png` (uso personal). Para cambiarlo, reemplazar ese archivo
 (PNG con fondo transparente, cuadrada, 256 px o mas) y subirla al repositorio: la proxima compilacion la incluye.
 
 ## Como conseguir el plugin

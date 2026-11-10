@@ -468,7 +468,7 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     addAndMakeVisible (padGrid);
 
     for (auto* b : { &loadButton, &halfButton, &doubleButton, &sliceButton, &learnButton,
-                     &detectButton, &pitchDownButton, &pitchUpButton })
+                     &detectButton, &pitchDownButton, &pitchUpButton, &pitchResetButton })
         addAndMakeVisible (*b);
     for (auto* b : { &syncButton, &stretchButton, &monoButton, &keysButton, &reverseButton, &gateButton })
         addAndMakeVisible (*b);
@@ -483,6 +483,12 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     setupCaption (sensCaption, "SENSIB.", juce::Justification::centredLeft);
     setupCaption (padTitle, "PAD", juce::Justification::centredLeft);
     setupCaption (globalTitle, "GLOBAL", juce::Justification::centredLeft);
+    setupCaption (pitchTitle, "PITCH GLOBAL  /  SAMPLE ENTERO", juce::Justification::centredLeft);
+    setupCaption (pitchCaption, "DESDE EL ORIGINAL", juce::Justification::centred);
+    pitchTitle.setFont (sans (13.0f));
+    pitchTitle.setColour (juce::Label::textColourId, kInk);
+    setupLcd (pitchLcd);
+    pitchLcd.setFont (sans (19.0f));
     padTitle.setFont (sans (13.0f));
     padTitle.setColour (juce::Label::textColourId, kInk);
     globalTitle.setFont (sans (13.0f));
@@ -532,6 +538,7 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
             param->endChangeGesture();
         }
     };
+    pitchResetButton.onClick = [nudgePitch] { nudgePitch (-100.0f); nudgePitch (12.0f); };   // vuelve a 0
     pitchDownButton.onClick = [nudgePitch] { nudgePitch (-1.0f); };
     pitchUpButton.onClick = [nudgePitch] { nudgePitch (1.0f); };
     sliceButton.setColour (juce::TextButton::buttonColourId, kRed);
@@ -574,7 +581,7 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
         padGrid.repaint();
     };
 
-    setupKnob (tune, "Pitch", " st");
+    setupKnob (tune, "Semitonos", " st");
     setupKnob (master, "Master", " dB");
     setupKnob (vel, "Velocidad", "");
     setupKnob (root, "Nota base", "");
@@ -603,7 +610,7 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     proc.addChangeListener (this);
     refresh();
     startTimerHz (30);
-    setSize (1000, 790);
+    setSize (1000, 804);
 }
 
 SamplerEditor::~SamplerEditor()
@@ -698,10 +705,20 @@ void SamplerEditor::refresh()
     if (! tempoLabel.isBeingEdited())
         tempoLabel.setText (juce::String (proc.getTargetBpm(), 1), juce::dontSendNotification);
 
+    updatePitchLcd();
+
     if (proc.engine.learnPad.load() >= 0 && proc.engine.learnPad.load() != pad)
         proc.engine.learnPad.store (pad);   // el aprendizaje sigue al pad elegido
 
     repaint();
+}
+
+void SamplerEditor::updatePitchLcd()
+{
+    const int semis = (int) std::lround (proc.apvts.getRawParameterValue ("tune")->load());
+    pitchLcd.setText (semis == 0 ? juce::String ("0 ST") : (semis > 0 ? "+" : "") + juce::String (semis) + " ST",
+                      juce::dontSendNotification);
+    pitchLcd.setColour (juce::Label::textColourId, semis == 0 ? kLcdDim : kRed);
 }
 
 void SamplerEditor::timerCallback()
@@ -720,6 +737,8 @@ void SamplerEditor::timerCallback()
 
     statusLabel.setText (proc.getSource() != nullptr ? proc.getStatusText().toUpperCase() : juce::String(),
                          juce::dontSendNotification);
+
+    updatePitchLcd();
     waveform.repaint();
     padGrid.repaint();
 }
@@ -738,15 +757,21 @@ void SamplerEditor::paint (juce::Graphics& g)
 
     // marca
     auto logo = logoBounds;
+    const juce::String name (JucePlugin_Name);
+    const auto word = name.trimCharactersAtEnd ("0123456789");
+    const juce::Font logoFont (sans (30.0f));
+    const int wordWidth = (int) std::ceil (juce::GlyphArrangement::getStringWidth (logoFont, word));
+    g.setFont (logoFont);
     g.setColour (kInk);
-    g.setFont (sans (30.0f));
-    g.drawText (JucePlugin_Name, logo, juce::Justification::centredLeft);
+    g.drawText (word, logo.removeFromLeft (wordWidth), juce::Justification::centredLeft);
+    g.setColour (kRed);
+    g.drawText (name.substring (word.length()), logo, juce::Justification::centredLeft);
 
     // pie
     g.setColour (kBodyLine);
     g.fillRect (18, footerBounds.getY() - 5, getWidth() - 36, 1);
     auto footer = footerBounds;
-    const auto crestArea = footer.removeFromLeft (58).toFloat();
+    const auto crestArea = footer.removeFromLeft (58).toFloat();   // el escudo va centrado en este lugar
     if (crest.isValid())
     {
         g.drawImage (crest, crestArea.reduced (1.0f), juce::RectanglePlacement::centred);
@@ -781,11 +806,12 @@ void SamplerEditor::paint (juce::Graphics& g)
     g.setColour (kDisplay);
     g.fillRoundedRectangle (bpmLabel.getBounds().toFloat(), 4.0f);
     g.fillRoundedRectangle (tempoLabel.getBounds().toFloat(), 4.0f);
+    g.fillRoundedRectangle (pitchLcd.getBounds().toFloat(), 5.0f);
 
     // lineas de seccion
     g.setColour (kBodyLine);
-    for (auto* title : { &padTitle, &globalTitle })
-        g.fillRect (title->getX(), title->getBottom() + 1, getWidth() - 18 - title->getX(), 1);
+    for (auto* title : { &padTitle, &globalTitle, &pitchTitle })
+        g.fillRect (title->getX(), title->getBottom() + 1, title->getWidth(), 1);
     g.fillRect (18, padGrid.getY() - 9, getWidth() - 36, 1);
 }
 
@@ -803,7 +829,7 @@ void SamplerEditor::resized()
     auto area = getLocalBounds().reduced (18, 14);
 
     // pie: escudo a la izquierda, version a la derecha
-    footerBounds = area.removeFromBottom (58);
+    footerBounds = area.removeFromBottom (72);
     area.removeFromBottom (10);
 
     // cabecera
@@ -874,20 +900,29 @@ void SamplerEditor::resized()
     learnButton.setBounds (row2.removeFromRight (140));
 
     area.removeFromTop (18);
-    globalTitle.setBounds (area.removeFromTop (20));
+    auto titles = area.removeFromTop (20);
+    globalTitle.setBounds (titles.removeFromLeft (kw * 3 - 14));
+    titles.removeFromLeft (14);
+    pitchTitle.setBounds (titles);
     area.removeFromTop (8);
+
     auto row3 = area.removeFromTop (102);
     layoutKnob (master, row3.removeFromLeft (kw));
     layoutKnob (vel, row3.removeFromLeft (kw));
-    layoutKnob (tune, row3.removeFromLeft (kw));
     layoutKnob (root, row3.removeFromLeft (kw));
+    layoutKnob (tune, row3.removeFromLeft (kw));
+    pitchCaption.setBounds (row3.removeFromTop (14));
+    pitchLcd.setBounds (row3.withSizeKeepingCentre (row3.getWidth() - 8, 46).translated (0, -8));
 
     area.removeFromTop (8);
     auto row4 = area.removeFromTop (32);
     monoButton.setBounds (row4.removeFromLeft (106));
     row4.removeFromLeft (8);
     keysButton.setBounds (row4.removeFromLeft (114));
-    pitchUpButton.setBounds (row4.removeFromRight (84));
-    row4.removeFromRight (6);
-    pitchDownButton.setBounds (row4.removeFromRight (84));
+    row4.removeFromLeft (kw * 3 - 228);
+    pitchDownButton.setBounds (row4.removeFromLeft (52));
+    row4.removeFromLeft (6);
+    pitchUpButton.setBounds (row4.removeFromLeft (52));
+    row4.removeFromLeft (6);
+    pitchResetButton.setBounds (row4);
 }
