@@ -3,7 +3,7 @@
 Plugin VST3 para Windows: un audio, cortado en hasta 16 pads.
 Hecho con [JUCE 9](https://juce.com) y [Signalsmith Stretch](https://signalsmith-audio.co.uk/code/stretch/).
 
-## Que hace hoy (v0.1, motor)
+## Que hace (v1.0)
 
 - Carga WAV, AIFF, FLAC, MP3 u OGG (boton **Cargar** o arrastrando el archivo). Hasta 5 minutos.
 - Detecta golpes y estima el BPM (usa tambien el largo del loop y el tempo del nombre del archivo).
@@ -21,7 +21,16 @@ Hecho con [JUCE 9](https://juce.com) y [Signalsmith Stretch](https://signalsmith
 - **SYNC** usa el tempo del proyecto; si el host no lo informa (o en la version standalone), usa el
   tempo que se escribe en el campo TEMPO.
 
-La interfaz tiene estilo de aparato: cuerpo gris claro, teclas con relieve, pantalla negra y acentos naranjas.
+- **DETECTAR** vuelve a poner el BPM detectado. **PITCH** (perilla y botones -1 / +1) cambia el tono
+  general por semitonos; con STRETCH activado no cambia la duracion.
+
+La interfaz tiene estilo de aparato: cuerpo claro, teclas con relieve, pantalla negra y acentos rojos,
+con una tipografia propia (Sampler5 Sans, generada por `Tools/make_font.py`).
+
+### Escudo
+
+Abajo a la izquierda hay un lugar reservado. Para ponerlo, guardar la imagen como `Assets/escudo.png`
+(PNG con fondo transparente, cuadrada, 256 px o mas) y subirla al repositorio: la proxima compilacion la incluye.
 
 ## Como conseguir el plugin
 

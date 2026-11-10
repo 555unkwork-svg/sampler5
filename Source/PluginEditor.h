@@ -114,7 +114,8 @@ private:
     PadGrid padGrid;
 
     juce::TextButton loadButton { "Cargar" }, halfButton { "/2" }, doubleButton { "x2" },
-                     sliceButton { "Cortar" }, learnButton { "Aprender MIDI" };
+                     sliceButton { "Cortar" }, learnButton { "Aprender MIDI" },
+                     detectButton { "Detectar" }, pitchDownButton { "Pitch -1" }, pitchUpButton { "Pitch +1" };
     juce::Label fileLabel, statusLabel, bpmCaption, bpmLabel, tempoCaption, tempoLabel,
                 padTitle, globalTitle, modeCaption, gridCaption, sensCaption;
     juce::Slider sensSlider;
@@ -128,7 +129,8 @@ private:
     std::unique_ptr<ButtonAttachment> syncAtt, stretchAtt, monoAtt, keysAtt, reverseAtt, gateAtt;
     std::unique_ptr<juce::FileChooser> chooser;
 
-    juce::Rectangle<int> displayBounds, logoBounds;
+    juce::Rectangle<int> displayBounds, logoBounds, footerBounds;
+    juce::Image crest;
     int attachedPad = -1;
     bool dragOver = false;
 

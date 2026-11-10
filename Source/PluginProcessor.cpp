@@ -236,19 +236,7 @@ void SamplerProcessor::finishLoad (LoadResult& result)
         }
         else
         {
-            sampleBpm = analysis.bpm > 0.0 ? analysis.bpm : 120.0;
-
-            // si el nombre del archivo trae el tempo y es coherente con lo detectado, le creemos
-            const double named = eng::bpmFromFileName (sampleFile.getFileNameWithoutExtension());
-            if (named > 0.0)
-            {
-                bool coherent = analysis.bpm <= 0.0;
-                for (double ratio : { 1.0, 0.5, 2.0, 0.75, 4.0 / 3.0, 2.0 / 3.0, 1.5 })
-                    if (std::abs (analysis.bpm * ratio - named) < named * 0.03)
-                        coherent = true;
-                if (coherent)
-                    sampleBpm = named;
-            }
+            sampleBpm = detectedBpm();
         }
     }
 
@@ -345,6 +333,30 @@ void SamplerProcessor::setSelectedPad (int pad)
 {
     selectedPad.store (juce::jlimit (0, eng::kNumPads - 1, pad));
     sendChangeMessage();
+}
+
+double SamplerProcessor::detectedBpm() const
+{
+    double bpm = analysis.bpm > 0.0 ? analysis.bpm : 120.0;
+
+    // si el nombre del archivo trae el tempo y es coherente con lo detectado, le creemos
+    const double named = eng::bpmFromFileName (sampleFile.getFileNameWithoutExtension());
+    if (named > 0.0)
+    {
+        bool coherent = analysis.bpm <= 0.0;
+        for (double ratio : { 1.0, 0.5, 2.0, 0.75, 4.0 / 3.0, 2.0 / 3.0, 1.5 })
+            if (std::abs (analysis.bpm * ratio - named) < named * 0.03)
+                coherent = true;
+        if (coherent)
+            bpm = named;
+    }
+    return bpm;
+}
+
+void SamplerProcessor::detectBpm()
+{
+    if (source != nullptr)
+        setSampleBpm (detectedBpm());
 }
 
 void SamplerProcessor::setSampleBpm (double bpm)
@@ -539,7 +551,7 @@ juce::String SamplerProcessor::getStatusText() const
 void SamplerProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     juce::XmlElement root ("Sampler5State");
-    root.setAttribute ("version", 1);
+    root.setAttribute ("version", 1);   // version del formato de estado
 
     if (auto params = apvts.copyState().createXml())
         root.addChildElement (params.release());

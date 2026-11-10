@@ -7,7 +7,7 @@ set(PLUGIN_MFR_CODE  "Mmrc")           # 4 caracteres, al menos una mayuscula
 set(PLUGIN_CODE      "Smp5")           # 4 caracteres, exactamente una mayuscula
 # -----------------------------------------------------------------------------
 
-project(Sampler5 VERSION 0.1.0 LANGUAGES C CXX)
+project(Sampler5 VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -68,6 +68,17 @@ juce_add_plugin(Sampler5
 target_sources(Sampler5 PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp)
+
+# Tipografia propia (se genera con Tools/make_font.py) y, si existe, el escudo.
+# Para poner el escudo: guardar la imagen como Assets/escudo.png y volver a compilar.
+set(ASSET_FILES Assets/Sampler5Sans.ttf)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Assets/escudo.png")
+    list(APPEND ASSET_FILES Assets/escudo.png)
+    target_compile_definitions(Sampler5 PRIVATE SAMPLER_HAS_CREST=1)
+endif()
+juce_add_binary_data(SamplerAssets SOURCES ${ASSET_FILES})
+set_target_properties(SamplerAssets PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_link_libraries(Sampler5 PRIVATE SamplerAssets)
 
 sampler_configure_target(Sampler5)
 target_link_libraries(Sampler5

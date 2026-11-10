@@ -62,6 +62,8 @@ public:
 
     double getSampleBpm() const { return sampleBpm; }
     void setSampleBpm (double bpm);
+    /** Vuelve a poner el BPM detectado en el audio (pisa lo escrito a mano). */
+    void detectBpm();
     double getHostBpm() const { return hostBpm.load(); }
     /** Tempo al que apunta SYNC: el del proyecto si el host lo informa; si no, el manual. */
     bool hasHostTempo() const { return hostBpm.load() > 0.0; }
@@ -125,6 +127,7 @@ private:
     void rebuildPlayable();
     void updateTempoTarget();
     double currentSpeed() const;
+    double detectedBpm() const;
 
     // parametros (punteros crudos, validos mientras viva apvts)
     struct PadParamPtrs { std::atomic<float>* gain, *pan, *pitch, *attack, *release, *reverse, *gate; };
