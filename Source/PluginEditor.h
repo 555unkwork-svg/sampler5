@@ -117,13 +117,14 @@ public:
     void fileDragExit (const juce::StringArray&) override { dragOver = false; repaint(); }
     void filesDropped (const juce::StringArray& files, int, int) override;
 
-    enum PanelTab { tabPad = 0, tabGlobal, tabMidi, numTabs };
+    enum PanelTab { tabPad = 0, tabFilter, tabGlobal, tabAdvanced, tabMidi, numTabs };
     void setPanelTab (int tab);
     void setViewMode (WaveformView::Mode);
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+    using ComboAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
     struct Knob
     {
@@ -175,14 +176,23 @@ private:
 
     juce::Label padTitle, nameLabel, noteLabel, startCaption, endCaption, playCaption;
     juce::TextButton favButton { "Favorito" }, holdButton { "Mantener" }, shotButton { "Disparo" };
-    juce::ToggleButton reverseButton { "Invertir" };
+    juce::ToggleButton reverseButton { "Invertir" }, loopButton { "Loop" }, muteButton { "Silenciar" };
     juce::Slider startSlider, endSlider;
-    Knob padGain, padPan, padPitch, padAttack, padRelease;
+    Knob padGain, padPan, padPitch, padFine, padVelAmt, padPreGain, padAttack, padRelease;
+
+    juce::Label filterTitle, filterCaption;
+    juce::ComboBox filterBox;
+    Knob padCutoff, padReso;
 
     juce::Label globalTitle, pitchTitle, pitchCaption, pitchLcd;
-    juce::ToggleButton monoButton { "Mono" };
+    juce::Label polyCaption, voicesCaption;
+    juce::ComboBox polyBox, voicesBox;
     juce::TextButton pitchDownButton { "-1" }, pitchUpButton { "+1" }, pitchResetButton { "Original" };
-    Knob master, vel, tune;
+    Knob master, globalPan, tune;
+
+    juce::Label advancedTitle, chokeCaption;
+    juce::ComboBox chokeBox;
+    Knob humanize, vel, swing;
 
     juce::Label midiTitle;
     juce::TextButton learnButton { "Aprender" };
@@ -192,9 +202,11 @@ private:
     // seccion MUESTRA
     juce::Label sampleCaption;
     juce::TextButton loadButton { "Cargar" }, navLeftButton { "<" }, navRightButton { ">" },
-                     zoomOutButton { "-" }, zoomInButton { "+" };
+                     zoomOutButton { "-" }, zoomInButton { "+" }, silenceButton { "Silencio" };
+    juce::ToggleButton invButton { "Inv" };
 
-    std::unique_ptr<ButtonAttachment> syncAtt, stretchAtt, monoAtt, keysAtt, reverseAtt;
+    std::unique_ptr<ButtonAttachment> syncAtt, stretchAtt, keysAtt, reverseAtt, loopAtt, muteAtt, invAtt;
+    std::unique_ptr<ComboAttachment> polyAtt, voicesAtt, chokeAtt, filterAtt;
     std::unique_ptr<juce::FileChooser> chooser;
 
     juce::Rectangle<int> displayBounds, logoBounds, footerBounds, panelBounds, sampleBounds;

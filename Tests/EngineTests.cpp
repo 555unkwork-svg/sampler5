@@ -375,6 +375,138 @@ static void testEngine()
     freq = dominantFrequency (out, 2000, 9000);
     CHECK (std::abs (freq - 300.0) < 2.0, "rateScale 1.5 deberia dar 300 Hz, dio %.1f", freq);
 
+    // ---- etapa 2 ----
+    engine.setPlayable (makePlayable (audio, { 0, (juce::int64) kRate, (juce::int64) kRate * 2, (juce::int64) kRate * 3 }));
+    for (int i = 0; i < 16; ++i)
+        engine.padNote[(size_t) i].store (36 + i);
+    engine.allNotesOff();
+    render (none, 4);
+    auto play = [&] (int note, int blocks)
+    {
+        juce::MidiBuffer mb;
+        mb.addEvent (juce::MidiMessage::noteOn (1, note, 1.0f), 0);
+        return render (mb, blocks);
+    };
+    auto quiet = [&] { engine.allNotesOff(); render (none, 4); };
+
+    // filtro: el pad 4 es un tono de 800 Hz; un pasa bajos a 100 Hz lo tiene que bajar mucho
+    const float openLevel = play (39, 20).getRMSLevel (0, 4000, 4000);
+    quiet();
+    engine.pads[3].filter = eng::FilterType::lowPass;
+    engine.pads[3].cutoffHz = 100.0f;
+    const float lowLevel = play (39, 20).getRMSLevel (0, 4000, 4000);
+    quiet();
+    engine.pads[3].filter = eng::FilterType::highPass;
+    engine.pads[3].cutoffHz = 8000.0f;
+    const float highLevel = play (39, 20).getRMSLevel (0, 4000, 4000);
+    quiet();
+    engine.pads[3].filter = eng::FilterType::off;
+    std::printf ("  filtro: abierto %.3f, pasa bajos a 100 Hz %.3f, pasa altos a 8 kHz %.3f\n", openLevel, lowLevel, highLevel);
+    CHECK (lowLevel < openLevel * 0.1f && highLevel < openLevel * 0.1f, "el filtro no filtra");
+
+    // ganancia y fino
+    engine.pads[0].preGainDb = 6.0f;
+    const float boosted = play (36, 10).getRMSLevel (0, 2000, 2000);
+    quiet();
+    engine.pads[0].preGainDb = 0.0f;
+    const float normal = play (36, 10).getRMSLevel (0, 2000, 2000);
+    quiet();
+    CHECK (std::abs (boosted / normal - 1.995f) < 0.05f, "GANANCIA +6 dB dio x%.2f", boosted / normal);
+    engine.pads[0].fine = 100.0f;
+    out = play (36, 20);
+    freq = dominantFrequency (out, 2000, 9000);
+    CHECK (std::abs (freq - 200.0 * std::pow (2.0, 1.0 / 12.0)) < 1.5, "FINO +100 cents dio %.1f Hz", freq);
+    engine.pads[0].fine = 0.0f;
+    quiet();
+
+    // loop: un corte de 0.1 s sigue sonando mientras se mantiene la nota, y sin clicks
+    engine.setPlayable (makePlayable (audio, { 0, 4410 }));
+    engine.pads[0].loop = true;
+    out = play (36, 40);
+    CHECK (out.getMagnitude (0, 15000, 4000) > 0.2f, "LOOP: deberia seguir sonando");
+    bool loopClick = false;
+    for (int i = 1; i < out.getNumSamples(); ++i)
+        if (std::abs (out.getSample (0, i) - out.getSample (0, i - 1)) > 0.12f) loopClick = true;
+    CHECK (! loopClick, "LOOP: click en la vuelta");
+    juce::MidiBuffer offMsg;
+    offMsg.addEvent (juce::MidiMessage::noteOff (1, 36), 0);
+    out = render (offMsg, 10);
+    CHECK (out.getMagnitude (0, 3000, 2000) == 0.0f, "LOOP: deberia cortar al soltar");
+    engine.pads[0].loop = false;
+    engine.setPlayable (makePlayable (audio, { 0, (juce::int64) kRate, (juce::int64) kRate * 2, (juce::int64) kRate * 3 }));
+    render (none, 2);
+
+    // silenciar un pad
+    engine.pads[1].mute = true;
+    CHECK (play (37, 6).getMagnitude (0, 0, 3000) == 0.0f, "pad silenciado no debe sonar");
+    engine.pads[1].mute = false;
+
+    // INV: todo al reves -> el pad 1 arranca desde el final de su corte
+    engine.globals.invertAll = true;
+    play (36, 4);
+    CHECK (engine.padPlayPos[0].load() > 0.2f, "INV: posicion %.3f", engine.padPlayPos[0].load());
+    engine.globals.invertAll = false;
+    quiet();
+
+    // voces maximas y choke
+    auto countPlaying = [&]
+    {
+        int n = 0;
+        for (int i = 0; i < 16; ++i) if (engine.padPlayPos[(size_t) i].load() >= 0.0f) ++n;
+        return n;
+    };
+    engine.globals.maxVoices = 2;
+    play (36, 2); play (37, 2); play (38, 2);
+    render (none, 2);
+    CHECK (countPlaying() == 2, "con 2 voces hay %d pads sonando", countPlaying());
+    engine.globals.maxVoices = 16;
+    quiet();
+    engine.globals.chokeAll = true;
+    play (36, 2); play (37, 2);
+    render (none, 2);
+    CHECK (countPlaying() == 1 && engine.padPlayPos[1].load() >= 0.0f, "choke: deberia quedar solo el ultimo pad");
+    engine.globals.chokeAll = false;
+    quiet();
+
+    // paneo global a la derecha
+    engine.globals.pan = 1.0f;
+    out = play (36, 20);
+    CHECK (out.getMagnitude (0, 5000, 4000) < 0.001f && out.getMagnitude (1, 5000, 4000) > 0.2f, "paneo global");
+    engine.globals.pan = 0.0f;
+    quiet();
+
+    // swing: una nota en contratiempo se retrasa; una en el tiempo, no
+    engine.globals.swing = 0.66f;
+    engine.globals.hostPlaying = true;
+    engine.globals.hostBpm = 120.0;
+    engine.globals.hostPpq = 4.0;
+    out = play (36, 4);
+    CHECK (out.getMagnitude (0, 0, 64) > 0.0f, "swing: la nota en el tiempo no debe retrasarse");
+    quiet();
+    engine.globals.hostPpq = 4.25;
+    out = play (36, 8);
+    const int expectedDelay = (int) (0.16 * kRate * 30.0 / 120.0);
+    int firstSound = -1;
+    for (int i = 0; i < out.getNumSamples() && firstSound < 0; ++i)
+        if (std::abs (out.getSample (0, i)) > 1.0e-5f) firstSound = i;
+    std::printf ("  swing 66%%: la nota en contratiempo arranca en %d (esperado ~%d)\n", firstSound, expectedDelay);
+    CHECK (std::abs (firstSound - expectedDelay) < 40, "swing: retraso %d en vez de %d", firstSound, expectedDelay);
+    engine.globals.swing = 0.5f;
+    engine.globals.hostPlaying = false;
+    quiet();
+
+    // humanizar: no rompe nada y varia el volumen
+    engine.globals.humanize = 1.0f;
+    float lo = 10.0f, hi = 0.0f;
+    for (int n = 0; n < 12; ++n)
+    {
+        const float level = play (36, 12).getRMSLevel (0, 2500, 2000);
+        lo = std::min (lo, level); hi = std::max (hi, level);
+        quiet();
+    }
+    CHECK (hi > lo * 1.1f && lo > 0.1f, "humanizar: niveles %.3f a %.3f", lo, hi);
+    engine.globals.humanize = 0.0f;
+
     // polifonia: muchas notas juntas no rompen nada
     juce::MidiBuffer many;
     engine.setPlayable (makePlayable (audio, { 0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000 }));

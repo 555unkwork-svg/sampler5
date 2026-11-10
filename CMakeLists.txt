@@ -7,7 +7,7 @@ set(PLUGIN_MFR_CODE  "Mmrc")           # 4 caracteres, al menos una mayuscula
 set(PLUGIN_CODE      "Smp5")           # 4 caracteres, exactamente una mayuscula
 # -----------------------------------------------------------------------------
 
-project(Sampler5 VERSION 1.1.0 LANGUAGES C CXX)
+project(Sampler5 VERSION 1.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -312,6 +312,8 @@ static void runTests (const juce::String& screenshotPath)
                 };
                 ed->setViewMode (WaveformView::Mode::source);   ed->setPanelTab (SamplerEditor::tabGlobal); shot ("-fuente-global");
                 ed->setViewMode (WaveformView::Mode::analysis); ed->setPanelTab (SamplerEditor::tabMidi);   shot ("-analisis-midi");
+                ed->setViewMode (WaveformView::Mode::slices);   ed->setPanelTab (SamplerEditor::tabFilter);   shot ("-filtro");
+                ed->setPanelTab (SamplerEditor::tabAdvanced); shot ("-avanzado");
             }
         }
     });

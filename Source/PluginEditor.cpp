@@ -591,9 +591,10 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     padGrid.onSliceMenu = [this] (int pad) { showSliceMenu (pad); };
 
     for (auto* b : { &detectButton, &halfButton, &doubleButton, &sourceTab, &slicesTab, &analysisTab,
-                     &resliceButton, &loadButton, &navLeftButton, &navRightButton, &zoomOutButton, &zoomInButton })
+                     &resliceButton, &loadButton, &navLeftButton, &navRightButton, &zoomOutButton, &zoomInButton,
+                     &silenceButton })
         addAndMakeVisible (*b);
-    for (auto* b : { &syncButton, &stretchButton, &snapButton })
+    for (auto* b : { &syncButton, &stretchButton, &snapButton, &invButton })
         addAndMakeVisible (*b);
     for (auto* c : { &modeBox, &gridBox, &snapBox })
         addAndMakeVisible (*c);
@@ -687,13 +688,14 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
                                       proc.loadFile (fc.getResult());
                               });
     };
+    silenceButton.onClick = [this] { proc.engine.allNotesOff(); };
     navLeftButton.onClick = [this] { waveform.scroll (-0.5); };
     navRightButton.onClick = [this] { waveform.scroll (0.5); };
     zoomOutButton.onClick = [this] { waveform.zoom (0.5); };
     zoomInButton.onClick = [this] { waveform.zoom (2.0); };
 
     //---- panel derecho: pestanas
-    const char* tabNames[numTabs] = { "Pad", "Global", "MIDI" };
+    const char* tabNames[numTabs] = { "Pad", "Filtro", "Global", "Avanzado", "MIDI" };
     for (int i = 0; i < numTabs; ++i)
     {
         addAndMakeVisible (panelTabs[i]);
@@ -724,6 +726,9 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     setupKnob (padGain, "Vol", " dB", tabPad);
     setupKnob (padPan, "Pan", "", tabPad);
     setupKnob (padPitch, "Tono", " st", tabPad);
+    setupKnob (padFine, "Fino", " ct", tabPad);
+    setupKnob (padVelAmt, "Velocidad", " %", tabPad);
+    setupKnob (padPreGain, "Ganancia", " dB", tabPad);
     setupKnob (padAttack, "Ataque", " ms", tabPad);
     setupKnob (padRelease, "Liberacion", " ms", tabPad);
 
@@ -746,7 +751,19 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     };
 
     addToTab (tabPad, reverseButton);
-    setupCaption (playCaption, "REPRODUCCION", juce::Justification::centredRight, tabPad);
+    addToTab (tabPad, loopButton);
+    addToTab (tabPad, muteButton);
+    setupCaption (playCaption, "REPRODUCCION", juce::Justification::centredLeft, tabPad);
+
+    //---- pestana FILTRO (del pad elegido)
+    setupCaption (filterTitle, "FILTRO", juce::Justification::centredLeft, tabFilter);
+    filterTitle.setFont (sans (13.0f));
+    filterTitle.setColour (juce::Label::textColourId, kInk);
+    setupCaption (filterCaption, "TIPO", juce::Justification::centredLeft, tabFilter);
+    addToTab (tabFilter, filterBox);
+    filterBox.addItemList ({ "Apagado", "Pasa bajos", "Pasa altos" }, 1);
+    setupKnob (padCutoff, "Corte", " Hz", tabFilter);
+    setupKnob (padReso, "Resonancia", " %", tabFilter);
     addToTab (tabPad, holdButton);
     addToTab (tabPad, shotButton);
     holdButton.onClick = [this] { setPadGate (true); };
@@ -766,11 +783,28 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     tabComponents[tabGlobal].push_back (&pitchLcd);
 
     setupKnob (master, "Master", " dB", tabGlobal);
-    setupKnob (vel, "Vel", "", tabGlobal);
+    setupKnob (globalPan, "Pan", "", tabGlobal);
     setupKnob (tune, "Semitonos", " st", tabGlobal);
     master.slider.setColour (juce::Slider::thumbColourId, kRed);
     tune.slider.setColour (juce::Slider::thumbColourId, kRed);
-    addToTab (tabGlobal, monoButton);
+    setupCaption (polyCaption, "POLI / MONO", juce::Justification::centredLeft, tabGlobal);
+    setupCaption (voicesCaption, "VOCES", juce::Justification::centredLeft, tabGlobal);
+    addToTab (tabGlobal, polyBox);
+    addToTab (tabGlobal, voicesBox);
+    polyBox.addItemList ({ "Poli", "Mono" }, 1);
+    for (int v = 1; v <= 16; ++v)
+        voicesBox.addItem (juce::String (v), v);
+
+    //---- pestana AVANZADO
+    setupCaption (advancedTitle, "AVANZADO", juce::Justification::centredLeft, tabAdvanced);
+    advancedTitle.setFont (sans (13.0f));
+    advancedTitle.setColour (juce::Label::textColourId, kInk);
+    setupKnob (humanize, "Humanizar", " %", tabAdvanced);
+    setupKnob (vel, "Vel", "", tabAdvanced);
+    setupKnob (swing, "Swing", " %", tabAdvanced);
+    setupCaption (chokeCaption, "CHOKE", juce::Justification::centredLeft, tabAdvanced);
+    addToTab (tabAdvanced, chokeBox);
+    chokeBox.addItemList ({ "Apagado", "Todos" }, 1);
     for (auto* b : { &pitchDownButton, &pitchUpButton, &pitchResetButton })
         addToTab (tabGlobal, *b);
     pitchDownButton.setColour (juce::TextButton::buttonColourId, kInkDim);
@@ -808,13 +842,21 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     tune.attachment = std::make_unique<SliderAttachment> (proc.apvts, "tune", tune.slider);
     master.attachment = std::make_unique<SliderAttachment> (proc.apvts, "master", master.slider);
     vel.attachment = std::make_unique<SliderAttachment> (proc.apvts, "vel", vel.slider);
+    vel.slider.textFromValueFunction = [] (double v) { return juce::String ((int) std::lround (v * 100.0)) + " %"; };
+    vel.slider.updateText();
+    globalPan.attachment = std::make_unique<SliderAttachment> (proc.apvts, "pan", globalPan.slider);
+    humanize.attachment = std::make_unique<SliderAttachment> (proc.apvts, "humanize", humanize.slider);
+    swing.attachment = std::make_unique<SliderAttachment> (proc.apvts, "swing", swing.slider);
+    polyAtt = std::make_unique<ComboAttachment> (proc.apvts, "mono", polyBox);
+    voicesAtt = std::make_unique<ComboAttachment> (proc.apvts, "voices", voicesBox);
+    chokeAtt = std::make_unique<ComboAttachment> (proc.apvts, "choke", chokeBox);
+    invAtt = std::make_unique<ButtonAttachment> (proc.apvts, "inv", invButton);
     root.attachment = std::make_unique<SliderAttachment> (proc.apvts, "root", root.slider);
     // despues del attachment, que si no pisa el texto
     root.slider.textFromValueFunction = [] (double v) { return noteName ((int) std::lround (v)); };
     root.slider.updateText();
     syncAtt = std::make_unique<ButtonAttachment> (proc.apvts, "sync", syncButton);
     stretchAtt = std::make_unique<ButtonAttachment> (proc.apvts, "stretch", stretchButton);
-    monoAtt = std::make_unique<ButtonAttachment> (proc.apvts, "mono", monoButton);
     keysAtt = std::make_unique<ButtonAttachment> (proc.apvts, "keys", keysButton);
 
     sendLookAndFeelChange();   // los controles ya creados toman el estilo nuevo
@@ -964,7 +1006,15 @@ void SamplerEditor::attachPad (int pad)
     padPitch.attachment.reset();
     padAttack.attachment.reset();
     padRelease.attachment.reset();
+    padFine.attachment.reset();
+    padVelAmt.attachment.reset();
+    padPreGain.attachment.reset();
+    padCutoff.attachment.reset();
+    padReso.attachment.reset();
     reverseAtt.reset();
+    loopAtt.reset();
+    muteAtt.reset();
+    filterAtt.reset();
 
     auto id = [pad] (const char* name) { return SamplerProcessor::padParamId (pad, name); };
     padGain.attachment = std::make_unique<SliderAttachment> (proc.apvts, id ("gain"), padGain.slider);
@@ -972,7 +1022,15 @@ void SamplerEditor::attachPad (int pad)
     padPitch.attachment = std::make_unique<SliderAttachment> (proc.apvts, id ("pitch"), padPitch.slider);
     padAttack.attachment = std::make_unique<SliderAttachment> (proc.apvts, id ("attack"), padAttack.slider);
     padRelease.attachment = std::make_unique<SliderAttachment> (proc.apvts, id ("release"), padRelease.slider);
+    padFine.attachment = std::make_unique<SliderAttachment> (proc.apvts, id ("fine"), padFine.slider);
+    padVelAmt.attachment = std::make_unique<SliderAttachment> (proc.apvts, id ("velamt"), padVelAmt.slider);
+    padPreGain.attachment = std::make_unique<SliderAttachment> (proc.apvts, id ("pregain"), padPreGain.slider);
+    padCutoff.attachment = std::make_unique<SliderAttachment> (proc.apvts, id ("cutoff"), padCutoff.slider);
+    padReso.attachment = std::make_unique<SliderAttachment> (proc.apvts, id ("reso"), padReso.slider);
     reverseAtt = std::make_unique<ButtonAttachment> (proc.apvts, id ("reverse"), reverseButton);
+    loopAtt = std::make_unique<ButtonAttachment> (proc.apvts, id ("loop"), loopButton);
+    muteAtt = std::make_unique<ButtonAttachment> (proc.apvts, id ("mute"), muteButton);
+    filterAtt = std::make_unique<ComboAttachment> (proc.apvts, id ("filter"), filterBox);
 }
 
 void SamplerEditor::refresh()
@@ -992,6 +1050,8 @@ void SamplerEditor::refresh()
 
     // pestana PAD
     padTitle.setText ("PAD " + juce::String (pad + 1).paddedLeft ('0', 2), juce::dontSendNotification);
+    filterTitle.setText ("FILTRO DEL PAD " + juce::String (pad + 1).paddedLeft ('0', 2) + "  /  "
+                             + proc.getSliceName (pad).toUpperCase(), juce::dontSendNotification);
     if (! nameLabel.isBeingEdited())
         nameLabel.setText (slice.used ? proc.getSliceName (pad) : juce::String ("VACIO"), juce::dontSendNotification);
     nameLabel.setEditable (false, slice.used);
@@ -1115,8 +1175,9 @@ void SamplerEditor::paint (juce::Graphics& g)
     if (currentTab == tabGlobal)
         for (auto* title : { &globalTitle, &pitchTitle })
             g.fillRect (title->getX(), title->getBottom() + 1, title->getWidth(), 1);
-    if (currentTab == tabMidi)
-        g.fillRect (midiTitle.getX(), midiTitle.getBottom() + 1, midiTitle.getWidth(), 1);
+    for (auto* title : { &filterTitle, &advancedTitle, &midiTitle })
+        if (title->isVisible())
+            g.fillRect (title->getX(), title->getBottom() + 1, title->getWidth(), 1);
 
     // pie: escudo, seccion MUESTRA y version
     auto footer = footerBounds;
@@ -1164,14 +1225,18 @@ void SamplerEditor::resized()
     //---- pie: escudo + MUESTRA
     footerBounds = area.removeFromBottom (92);
     area.removeFromBottom (12);
-    sampleBounds = footerBounds.withTrimmedLeft (84).withWidth (400);
+    sampleBounds = footerBounds.withTrimmedLeft (84).withWidth (520);
     auto sample = sampleBounds;
     sampleCaption.setBounds (sample.removeFromTop (16));
     sample.removeFromTop (3);
     auto sampleButtons = sample.removeFromBottom (32);
     sample.removeFromBottom (4);
     overview.setBounds (sample);
-    loadButton.setBounds (sampleButtons.removeFromLeft (110));
+    loadButton.setBounds (sampleButtons.removeFromLeft (100));
+    sampleButtons.removeFromLeft (6);
+    invButton.setBounds (sampleButtons.removeFromLeft (74));
+    sampleButtons.removeFromLeft (6);
+    silenceButton.setBounds (sampleButtons.removeFromLeft (100));
     zoomInButton.setBounds (sampleButtons.removeFromRight (40));
     sampleButtons.removeFromRight (4);
     zoomOutButton.setBounds (sampleButtons.removeFromRight (40));
@@ -1247,7 +1312,7 @@ void SamplerEditor::resized()
     auto tabs = area.removeFromTop (30);
     for (int i = 0; i < numTabs; ++i)
     {
-        panelTabs[i].setBounds (tabs.removeFromLeft (96));
+        panelTabs[i].setBounds (tabs.removeFromLeft (104));
         tabs.removeFromLeft (4);
     }
     area.removeFromTop (12);
@@ -1264,12 +1329,10 @@ void SamplerEditor::resized()
         nameLabel.setBounds (title);
         a.removeFromTop (8);
 
-        auto knobs = a.removeFromTop (100);
-        layoutKnob (padGain, knobs.removeFromLeft (kw));
-        layoutKnob (padPan, knobs.removeFromLeft (kw));
-        layoutKnob (padPitch, knobs.removeFromLeft (kw));
-        layoutKnob (padAttack, knobs.removeFromLeft (kw));
-        layoutKnob (padRelease, knobs);
+        auto knobs = a.removeFromTop (92);
+        const int sw = knobs.getWidth() / 8;
+        for (auto* k : { &padGain, &padPan, &padPitch, &padFine, &padVelAmt, &padPreGain, &padAttack, &padRelease })
+            layoutKnob (*k, knobs.removeFromLeft (sw));
         a.removeFromTop (10);
 
         auto range = a.removeFromTop (28);
@@ -1282,12 +1345,33 @@ void SamplerEditor::resized()
         a.removeFromTop (12);
 
         auto row = a.removeFromTop (32);
-        reverseButton.setBounds (row.removeFromLeft (110));
-        shotButton.setBounds (row.removeFromRight (96));
-        row.removeFromRight (4);
-        holdButton.setBounds (row.removeFromRight (104));
-        row.removeFromRight (8);
-        playCaption.setBounds (row);
+        reverseButton.setBounds (row.removeFromLeft (104));
+        row.removeFromLeft (6);
+        loopButton.setBounds (row.removeFromLeft (80));
+        row.removeFromLeft (6);
+        muteButton.setBounds (row.removeFromLeft (112));
+        a.removeFromTop (10);
+
+        auto play = a.removeFromTop (32);
+        playCaption.setBounds (play.removeFromLeft (104));
+        holdButton.setBounds (play.removeFromLeft (110));
+        play.removeFromLeft (4);
+        shotButton.setBounds (play.removeFromLeft (100));
+    }
+
+    // FILTRO
+    {
+        auto a = area;
+        filterTitle.setBounds (a.removeFromTop (20));
+        a.removeFromTop (10);
+        auto knobs = a.removeFromTop (102);
+        auto column = knobs.removeFromLeft (170);
+        filterCaption.setBounds (column.removeFromTop (14));
+        column.removeFromTop (4);
+        filterBox.setBounds (column.removeFromTop (32));
+        knobs.removeFromLeft (16);
+        layoutKnob (padCutoff, knobs.removeFromLeft (kw));
+        layoutKnob (padReso, knobs.removeFromLeft (kw));
     }
 
     // GLOBAL
@@ -1301,7 +1385,7 @@ void SamplerEditor::resized()
 
         auto knobs = a.removeFromTop (102);
         layoutKnob (master, knobs.removeFromLeft (kw));
-        layoutKnob (vel, knobs.removeFromLeft (kw));
+        layoutKnob (globalPan, knobs.removeFromLeft (kw));
         layoutKnob (tune, knobs.removeFromLeft (kw));
         knobs.removeFromLeft (10);
         knobs = knobs.removeFromLeft (150);
@@ -1309,14 +1393,33 @@ void SamplerEditor::resized()
         pitchLcd.setBounds (knobs.withSizeKeepingCentre (knobs.getWidth(), 46).translated (0, -8));
         a.removeFromTop (10);
 
+        auto captions = a.removeFromTop (14);
+        polyCaption.setBounds (captions.removeFromLeft (kw));
+        voicesCaption.setBounds (captions.removeFromLeft (kw));
         auto row = a.removeFromTop (32);
-        monoButton.setBounds (row.removeFromLeft (106));
-        row.removeFromLeft (kw * 2 - 106);
+        polyBox.setBounds (row.removeFromLeft (kw - 8));
+        row.removeFromLeft (8);
+        voicesBox.setBounds (row.removeFromLeft (kw - 16));
+        row.removeFromLeft (16);
         pitchDownButton.setBounds (row.removeFromLeft (52));
         row.removeFromLeft (6);
         pitchUpButton.setBounds (row.removeFromLeft (52));
         row.removeFromLeft (6);
         pitchResetButton.setBounds (row.removeFromLeft (110));
+    }
+
+    // AVANZADO
+    {
+        auto a = area;
+        advancedTitle.setBounds (a.removeFromTop (20));
+        a.removeFromTop (10);
+        auto knobs = a.removeFromTop (102);
+        layoutKnob (humanize, knobs.removeFromLeft (kw));
+        layoutKnob (vel, knobs.removeFromLeft (kw));
+        layoutKnob (swing, knobs.removeFromLeft (kw));
+        a.removeFromTop (10);
+        chokeCaption.setBounds (a.removeFromTop (14));
+        chokeBox.setBounds (a.removeFromTop (32).removeFromLeft (170));
     }
 
     // MIDI

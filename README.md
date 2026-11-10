@@ -3,7 +3,7 @@
 Plugin VST3 para Windows: un audio, cortado en hasta 16 pads.
 Hecho con [JUCE 9](https://juce.com) y [Signalsmith Stretch](https://signalsmith-audio.co.uk/code/stretch/).
 
-## Que hace (v1.1)
+## Que hace (v1.2)
 
 - Carga WAV, AIFF, FLAC, MP3 u OGG (boton **CARGAR** o arrastrando el archivo). Hasta 2 minutos.
 - Detecta golpes y estima el BPM (usa tambien el largo del loop y el tempo del nombre del archivo).
@@ -17,9 +17,15 @@ Hecho con [JUCE 9](https://juce.com) y [Signalsmith Stretch](https://signalsmith
 - **AUTOAJUSTE**: iman al mover cortes (Auto, Golpe, Cruce por cero o Grilla).
 - Los cortes **favoritos** no se pierden al regenerar. Cada corte puede tener nombre.
 - 16 pads por MIDI (desde C5 de FL Studio, nota 60) o con el mouse.
-- Pestana **PAD**: VOL, PAN, TONO, ATAQUE, LIBERACION, INICIO, FINAL, INVERTIR y REPRODUCCION (MANTENER / DISPARO).
-- Pestana **GLOBAL**: MASTER, VEL, MONO y pitch global por semitonos (con ESTIRAR no cambia la duracion).
+- Pestana **PAD**: VOL, PAN, TONO, FINO (cents), VELOCIDAD (respuesta del pad al golpe), GANANCIA, ATAQUE,
+  LIBERACION, INICIO, FINAL, INVERTIR, LOOP (repite mientras se mantiene la nota), SILENCIAR y
+  REPRODUCCION (MANTENER / DISPARO).
+- Pestana **FILTRO**: filtro del pad elegido (pasa bajos / pasa altos), CORTE y RESONANCIA.
+- Pestana **GLOBAL**: MASTER, PAN, POLI / MONO, VOCES y pitch global por semitonos.
+- Pestana **AVANZADO**: HUMANIZAR (variacion leve de volumen y tiempo), VEL (respuesta general al golpe),
+  SWING (retrasa las notas en contratiempo; necesita el proyecto en reproduccion) y CHOKE (cada pad corta a los demas).
 - Pestana **MIDI**: TECLAS (el pad elegido se toca cromatico), NOTA BASE y APRENDER.
+- **MUESTRA**: CARGAR, INV (el audio entero al reves) y SILENCIO (corta todo lo que suena).
 - **SINCRO** sigue el tempo del proyecto (o el campo TEMPO si el host no lo informa); **ESTIRAR** lo hace sin cambiar el tono.
 - El proyecto guarda cortes, nombres, favoritos, notas y parametros. El audio se guarda como ruta al archivo.
 

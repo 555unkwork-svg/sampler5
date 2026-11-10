@@ -31,25 +31,45 @@ struct Playable
 };
 using PlayablePtr = std::shared_ptr<const Playable>;
 
+enum class FilterType { off = 0, lowPass, highPass };
+
 struct PadSettings
 {
-    float gainDb = 0.0f;
+    float gainDb = 0.0f;       // VOL
+    float preGainDb = 0.0f;    // GANANCIA: refuerzo extra
     float pan = 0.0f;          // -1..1
     float pitch = 0.0f;        // semitonos
+    float fine = 0.0f;         // cents
+    float velAmount = 1.0f;    // VELOCIDAD: cuanto responde este pad a la fuerza del golpe
     float attackMs = 1.0f;
     float releaseMs = 10.0f;
     bool reverse = false;
     bool gate = false;         // true: suena mientras se mantiene la nota
+    bool loop = false;         // repite el corte mientras se mantiene la nota
+    bool mute = false;
+    FilterType filter = FilterType::off;
+    float cutoffHz = 20000.0f;
+    float resonance = 0.0f;    // 0..1
 };
 
 struct GlobalSettings
 {
     float masterDb = 0.0f;
+    float pan = 0.0f;
     float velocitySens = 0.5f; // 0 = siempre a tope, 1 = sigue la velocidad
+    float humanize = 0.0f;     // 0..1: variacion al azar de volumen y tiempo
+    float swing = 0.5f;        // 0.5 = sin swing; hasta 0.75
     bool mono = false;
+    bool chokeAll = false;     // cada pad corta a los demas
+    bool invertAll = false;    // INV: el audio entero al reves
+    int maxVoices = 16;
     bool keysMode = false;     // el pad elegido se toca cromatico
     int keysRoot = 60;
     int selectedPad = 0;
+
+    // datos del host para el swing (los pone el procesador en cada bloque)
+    bool hostPlaying = false;
+    double hostPpq = 0.0, hostBpm = 0.0;
 };
 
 class SamplerEngine
@@ -93,20 +113,39 @@ private:
         PlayablePtr src;
         double pos = 0.0, rate = 1.0;
         double startP = 0.0, endP = 0.0;
-        bool reverse = false, gate = false;
+        bool reverse = false, gate = false, loop = false;
         float keyOffset = 0.0f, velGain = 1.0f;
         float gainL = 0.0f, gainR = 0.0f;
         bool gainsSet = false;
         enum class Stage { attack, sustain, release } stage = Stage::attack;
         float env = 0.0f, envStep = 0.0f;
+        float ic1[2] {}, ic2[2] {};   // estado del filtro
+    };
+
+    struct Event
+    {
+        int time = 0;        // en muestras desde el inicio del bloque
+        bool on = false;
+        int noteId = 0, pad = 0;
+        float keyOffset = 0.0f, velocity = 1.0f;
     };
 
     void noteOn (int noteId, int pad, float keyOffset, float velocity);
     void noteOff (int noteId);
-    void handleMidi (const juce::MidiMessage&);
+    void queueMidi (const juce::MidiMessage&, int time, int numSamples);
+    void addEvent (const Event&, int numSamples);
+    void fire (const Event&);
     void renderVoices (juce::AudioBuffer<float>& out, int startSample, int numSamples);
     void startRelease (Voice&, float ms);
     void updateVoiceRate (Voice&) const;
+    int delayFor (int time);
+
+    static constexpr int kMaxEvents = 128;
+    std::array<Event, kMaxEvents> blockEvents, pending;
+    int numBlockEvents = 0, numPending = 0;
+    std::array<int, 128> noteDelay {};
+    juce::Random random;
+    float lastPanL = 1.0f, lastPanR = 1.0f;
 
     double hostRate = 44100.0;
     std::array<Voice, kMaxVoices> voices;

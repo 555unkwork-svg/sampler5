@@ -154,10 +154,16 @@ private:
     double detectedBpm() const;
 
     // parametros (punteros crudos, validos mientras viva apvts)
-    struct PadParamPtrs { std::atomic<float>* gain, *pan, *pitch, *attack, *release, *reverse, *gate; };
+    struct PadParamPtrs
+    {
+        std::atomic<float>* gain, *pan, *pitch, *attack, *release, *reverse, *gate,
+                          * fine, *velAmt, *preGain, *loop, *mute, *filter, *cutoff, *reso;
+    };
     std::array<PadParamPtrs, eng::kNumPads> padParams {};
     std::atomic<float>* masterParam = nullptr, *velParam = nullptr, *monoParam = nullptr, *syncParam = nullptr,
-                      * stretchParam = nullptr, *tuneParam = nullptr, *keysParam = nullptr, *rootParam = nullptr;
+                      * stretchParam = nullptr, *tuneParam = nullptr, *keysParam = nullptr, *rootParam = nullptr,
+                      * panParam = nullptr, *voicesParam = nullptr, *humanizeParam = nullptr, *swingParam = nullptr,
+                      * chokeParam = nullptr, *invParam = nullptr;
 
     // modelo
     juce::CriticalSection modelLock;      // para get/setStateInformation desde otros hilos

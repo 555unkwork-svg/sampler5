@@ -27,6 +27,7 @@ APVTS::ParameterLayout SamplerProcessor::createLayout()
     using F = juce::AudioParameterFloat;
     using B = juce::AudioParameterBool;
     using I = juce::AudioParameterInt;
+    using C = juce::AudioParameterChoice;
     using Range = juce::NormalisableRange<float>;
 
     auto timeRange = [] (float maxMs)
@@ -44,6 +45,12 @@ APVTS::ParameterLayout SamplerProcessor::createLayout()
     layout.add (std::make_unique<F> (juce::ParameterID { "tune", 1 }, "Tono", Range (-12.0f, 12.0f, 1.0f), 0.0f));
     layout.add (std::make_unique<B> (juce::ParameterID { "keys", 1 }, "Teclas", false));
     layout.add (std::make_unique<I> (juce::ParameterID { "root", 1 }, "Nota base", 0, 127, 60));
+    layout.add (std::make_unique<F> (juce::ParameterID { "pan", 1 }, "Pan", Range (-1.0f, 1.0f, 0.01f), 0.0f));
+    layout.add (std::make_unique<I> (juce::ParameterID { "voices", 1 }, "Voces", 1, 16, 16));
+    layout.add (std::make_unique<F> (juce::ParameterID { "humanize", 1 }, "Humanizar", Range (0.0f, 100.0f, 1.0f), 0.0f));
+    layout.add (std::make_unique<F> (juce::ParameterID { "swing", 1 }, "Swing", Range (50.0f, 75.0f, 1.0f), 50.0f));
+    layout.add (std::make_unique<C> (juce::ParameterID { "choke", 1 }, "Choke", juce::StringArray { "Apagado", "Todos" }, 0));
+    layout.add (std::make_unique<B> (juce::ParameterID { "inv", 1 }, "Inv", false));
 
     for (int i = 0; i < eng::kNumPads; ++i)
     {
@@ -55,6 +62,17 @@ APVTS::ParameterLayout SamplerProcessor::createLayout()
         layout.add (std::make_unique<F> (juce::ParameterID { padParamId (i, "release"), 1 }, name + "Release", timeRange (2000.0f), 10.0f));
         layout.add (std::make_unique<B> (juce::ParameterID { padParamId (i, "reverse"), 1 }, name + "Reversa", false));
         layout.add (std::make_unique<B> (juce::ParameterID { padParamId (i, "gate"), 1 }, name + "Mantener", true));
+        layout.add (std::make_unique<F> (juce::ParameterID { padParamId (i, "fine"), 1 }, name + "Fino", Range (-100.0f, 100.0f, 1.0f), 0.0f));
+        layout.add (std::make_unique<F> (juce::ParameterID { padParamId (i, "velamt"), 1 }, name + "Velocidad", Range (0.0f, 100.0f, 1.0f), 100.0f));
+        layout.add (std::make_unique<F> (juce::ParameterID { padParamId (i, "pregain"), 1 }, name + "Ganancia", Range (0.0f, 24.0f, 0.1f), 0.0f));
+        layout.add (std::make_unique<B> (juce::ParameterID { padParamId (i, "loop"), 1 }, name + "Loop", false));
+        layout.add (std::make_unique<B> (juce::ParameterID { padParamId (i, "mute"), 1 }, name + "Silenciar", false));
+        layout.add (std::make_unique<C> (juce::ParameterID { padParamId (i, "filter"), 1 }, name + "Filtro",
+                                         juce::StringArray { "Apagado", "Pasa bajos", "Pasa altos" }, 0));
+        Range cutoffRange (20.0f, 20000.0f, 1.0f);
+        cutoffRange.setSkewForCentre (1000.0f);
+        layout.add (std::make_unique<F> (juce::ParameterID { padParamId (i, "cutoff"), 1 }, name + "Corte", cutoffRange, 20000.0f));
+        layout.add (std::make_unique<F> (juce::ParameterID { padParamId (i, "reso"), 1 }, name + "Resonancia", Range (0.0f, 100.0f, 1.0f), 0.0f));
     }
 
     return layout;
@@ -74,6 +92,12 @@ SamplerProcessor::SamplerProcessor()
     tuneParam = apvts.getRawParameterValue ("tune");
     keysParam = apvts.getRawParameterValue ("keys");
     rootParam = apvts.getRawParameterValue ("root");
+    panParam = apvts.getRawParameterValue ("pan");
+    voicesParam = apvts.getRawParameterValue ("voices");
+    humanizeParam = apvts.getRawParameterValue ("humanize");
+    swingParam = apvts.getRawParameterValue ("swing");
+    chokeParam = apvts.getRawParameterValue ("choke");
+    invParam = apvts.getRawParameterValue ("inv");
 
     for (int i = 0; i < eng::kNumPads; ++i)
     {
@@ -85,6 +109,14 @@ SamplerProcessor::SamplerProcessor()
         p.release = apvts.getRawParameterValue (padParamId (i, "release"));
         p.reverse = apvts.getRawParameterValue (padParamId (i, "reverse"));
         p.gate = apvts.getRawParameterValue (padParamId (i, "gate"));
+        p.fine = apvts.getRawParameterValue (padParamId (i, "fine"));
+        p.velAmt = apvts.getRawParameterValue (padParamId (i, "velamt"));
+        p.preGain = apvts.getRawParameterValue (padParamId (i, "pregain"));
+        p.loop = apvts.getRawParameterValue (padParamId (i, "loop"));
+        p.mute = apvts.getRawParameterValue (padParamId (i, "mute"));
+        p.filter = apvts.getRawParameterValue (padParamId (i, "filter"));
+        p.cutoff = apvts.getRawParameterValue (padParamId (i, "cutoff"));
+        p.reso = apvts.getRawParameterValue (padParamId (i, "reso"));
     }
 
     startTimerHz (30);
@@ -115,10 +147,22 @@ void SamplerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 {
     juce::ScopedNoDenormals noDenormals;
 
+    auto& g = engine.globals;
+    g.hostPlaying = false;
     if (auto* head = getPlayHead())
         if (auto position = head->getPosition())
+        {
             if (auto bpm = position->getBpm())
+            {
                 hostBpm.store (*bpm, std::memory_order_relaxed);
+                g.hostBpm = *bpm;
+            }
+            if (auto ppq = position->getPpqPosition())
+            {
+                g.hostPpq = *ppq;
+                g.hostPlaying = position->getIsPlaying();
+            }
+        }
 
     for (int i = 0; i < eng::kNumPads; ++i)
     {
@@ -131,15 +175,28 @@ void SamplerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         s.releaseMs = p.release->load (std::memory_order_relaxed);
         s.reverse = p.reverse->load (std::memory_order_relaxed) > 0.5f;
         s.gate = p.gate->load (std::memory_order_relaxed) > 0.5f;
+        s.fine = p.fine->load (std::memory_order_relaxed);
+        s.velAmount = p.velAmt->load (std::memory_order_relaxed) * 0.01f;
+        s.preGainDb = p.preGain->load (std::memory_order_relaxed);
+        s.loop = p.loop->load (std::memory_order_relaxed) > 0.5f;
+        s.mute = p.mute->load (std::memory_order_relaxed) > 0.5f;
+        s.filter = (eng::FilterType) juce::jlimit (0, 2, (int) std::lround (p.filter->load (std::memory_order_relaxed)));
+        s.cutoffHz = p.cutoff->load (std::memory_order_relaxed);
+        s.resonance = p.reso->load (std::memory_order_relaxed) * 0.01f;
     }
 
-    auto& g = engine.globals;
     g.masterDb = masterParam->load (std::memory_order_relaxed);
     g.velocitySens = velParam->load (std::memory_order_relaxed);
     g.mono = monoParam->load (std::memory_order_relaxed) > 0.5f;
     g.keysMode = keysParam->load (std::memory_order_relaxed) > 0.5f;
     g.keysRoot = (int) std::lround (rootParam->load (std::memory_order_relaxed));
     g.selectedPad = selectedPad.load (std::memory_order_relaxed);
+    g.pan = panParam->load (std::memory_order_relaxed);
+    g.maxVoices = (int) std::lround (voicesParam->load (std::memory_order_relaxed));
+    g.humanize = humanizeParam->load (std::memory_order_relaxed) * 0.01f;
+    g.swing = swingParam->load (std::memory_order_relaxed) * 0.01f;
+    g.chokeAll = chokeParam->load (std::memory_order_relaxed) > 0.5f;
+    g.invertAll = invParam->load (std::memory_order_relaxed) > 0.5f;
 
     engine.process (buffer, midi);
 }
