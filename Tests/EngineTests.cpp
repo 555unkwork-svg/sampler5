@@ -198,6 +198,9 @@ static void testEngine()
 
     eng::SamplerEngine engine;
     engine.prepare (kRate);
+    CHECK (engine.padNote[0].load() == 60 && engine.padNote[15].load() == 75, "los pads deben ir desde la nota 60");
+    for (int i = 0; i < 16; ++i)
+        engine.padNote[(size_t) i].store (36 + i);   // el resto de la prueba usa notas fijas
     engine.setPlayable (makePlayable (audio, { 0, (juce::int64) kRate, (juce::int64) kRate * 2, (juce::int64) kRate * 3 }));
 
     const int block = 512;

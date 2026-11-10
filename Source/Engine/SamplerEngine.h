@@ -56,7 +56,7 @@ class SamplerEngine
 {
 public:
     static constexpr int kMaxVoices = 16;
-    static constexpr int kDefaultFirstNote = 36;   // C1 en FL Studio / C2 en otros
+    static constexpr int kDefaultFirstNote = 60;   // C5 en FL Studio (C3 o C4 en otros DAW)
 
     SamplerEngine();
 

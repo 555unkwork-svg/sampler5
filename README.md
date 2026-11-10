@@ -8,8 +8,8 @@ Hecho con [JUCE 9](https://juce.com) y [Signalsmith Stretch](https://signalsmith
 - Carga WAV, AIFF, FLAC, MP3 u OGG (boton **Cargar** o arrastrando el archivo). Hasta 5 minutos.
 - Detecta golpes y estima el BPM; corta por golpes, por grilla, en partes iguales, al azar o a mano.
 - Waveform: arrastrar un marcador lo mueve, doble clic crea un corte, clic derecho lo borra.
-- 16 pads por MIDI (desde C3 de FL Studio, nota 36) o con el mouse.
-- Por pad: volumen, paneo, tono, ataque, release, reversa y mantener (gate).
+- 16 pads por MIDI (desde C5 de FL Studio, nota 60) o con el mouse.
+- Por pad: volumen, paneo, tono, ataque, release, reversa y mantener (gate, activado por defecto).
 - **SYNC**: sigue el tempo del proyecto. **STRETCH**: lo hace sin cambiar el tono.
 - **Teclas**: el pad elegido se toca cromatico desde la nota base.
 - **Aprender MIDI**: asigna el pad elegido a la proxima nota que llegue.

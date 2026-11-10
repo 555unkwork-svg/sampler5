@@ -54,7 +54,7 @@ APVTS::ParameterLayout SamplerProcessor::createLayout()
         layout.add (std::make_unique<F> (juce::ParameterID { padParamId (i, "attack"), 1 }, name + "Ataque", timeRange (1000.0f), 1.0f));
         layout.add (std::make_unique<F> (juce::ParameterID { padParamId (i, "release"), 1 }, name + "Release", timeRange (2000.0f), 10.0f));
         layout.add (std::make_unique<B> (juce::ParameterID { padParamId (i, "reverse"), 1 }, name + "Reversa", false));
-        layout.add (std::make_unique<B> (juce::ParameterID { padParamId (i, "gate"), 1 }, name + "Mantener", false));
+        layout.add (std::make_unique<B> (juce::ParameterID { padParamId (i, "gate"), 1 }, name + "Mantener", true));
     }
 
     return layout;

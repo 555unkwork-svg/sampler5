@@ -134,7 +134,7 @@ static void runTests (const juce::String& screenshotPath)
     onMessageThread ([&] { proc->autoSlice (eng::SliceMode::grid, 2); });   // 1 tiempo = 0.5 s
     juce::Thread::sleep (100);
     float peak = 0.0f;
-    const int plain = playAndMeasure (*proc, 36, 80, &peak);
+    const int plain = playAndMeasure (*proc, 60, 80, &peak);
     std::printf ("  pad 1 sin sync: suena %d muestras (corte de 22050), pico %.2f\n", plain, peak);
     CHECK (peak > 0.3f, "el pad no suena");
     CHECK (plain > 22050 && plain < 22050 + 2000, "duracion sin sync: %d", plain);
@@ -145,14 +145,14 @@ static void runTests (const juce::String& screenshotPath)
     playAndMeasure (*proc, 0, 4);   // el procesador lee el tempo en processBlock
     CHECK (waitUntilIdle (*proc, 800), "el stretch no termino");
     juce::Thread::sleep (200);
-    const int synced = playAndMeasure (*proc, 36, 80);
+    const int synced = playAndMeasure (*proc, 60, 80);
     std::printf ("  pad 1 con sync a 150 BPM (stretch): %d muestras (esperado ~17640)\n", synced);
     CHECK (synced > 17640 - 300 && synced < 17640 + 2000, "duracion con sync+stretch: %d", synced);
 
     // sync sin stretch: misma duracion, por remuestreo
     onMessageThread ([&] { proc->apvts.getParameter ("stretch")->setValueNotifyingHost (0.0f); });
     juce::Thread::sleep (300);
-    const int resampled = playAndMeasure (*proc, 36, 80);
+    const int resampled = playAndMeasure (*proc, 60, 80);
     std::printf ("  pad 1 con sync a 150 BPM (sin stretch): %d muestras\n", resampled);
     CHECK (resampled > 17640 - 300 && resampled < 17640 + 2000, "duracion con sync sin stretch: %d", resampled);
 
@@ -162,7 +162,7 @@ static void runTests (const juce::String& screenshotPath)
     onMessageThread ([&]
     {
         proc->setSliceStart (3, 12345);
-        proc->engine.padNote[3].store (72);
+        proc->engine.padNote[3].store (100);
         proc->setSampleBpm (121.5);
         before = proc->getSlices();
         proc->getStateInformation (state);
@@ -188,12 +188,12 @@ static void runTests (const juce::String& screenshotPath)
                      (double) second->apvts.getRawParameterValue ("sync")->load());
         CHECK (same, "los cortes no se restauraron");
         CHECK (std::abs (second->getSampleBpm() - 121.5) < 0.001, "el BPM no se restauro");
-        CHECK (second->engine.padNote[3].load() == 72, "la nota aprendida no se restauro");
+        CHECK (second->engine.padNote[3].load() == 100, "la nota aprendida no se restauro");
         CHECK (second->getSource() != nullptr, "el audio no se volvio a cargar");
         CHECK (second->apvts.getRawParameterValue ("sync")->load() > 0.5f, "los parametros no se restauraron");
     });
     float peak2 = 0.0f;
-    playAndMeasure (*second, 72, 20, &peak2);
+    playAndMeasure (*second, 100, 20, &peak2);
     CHECK (peak2 > 0.01f, "el plugin restaurado no suena");
 
     std::printf ("Interfaz\n");
