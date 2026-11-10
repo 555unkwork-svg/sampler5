@@ -6,7 +6,9 @@ Hecho con [JUCE 9](https://juce.com) y [Signalsmith Stretch](https://signalsmith
 ## Que hace hoy (v0.1, motor)
 
 - Carga WAV, AIFF, FLAC, MP3 u OGG (boton **Cargar** o arrastrando el archivo). Hasta 5 minutos.
-- Detecta golpes y estima el BPM; corta por golpes, por grilla, en partes iguales, al azar o a mano.
+- Detecta golpes y estima el BPM (usa tambien el largo del loop y el tempo del nombre del archivo).
+- Corta por golpes (con control de sensibilidad), por grilla, en partes iguales, al azar o a mano.
+- Los cortes van en cruces por cero y terminan con un fundido corto antes del golpe siguiente.
 - Waveform: arrastrar un marcador lo mueve, doble clic crea un corte, clic derecho lo borra.
 - 16 pads por MIDI (desde C5 de FL Studio, nota 60) o con el mouse.
 - Por pad: volumen, paneo, tono, ataque, release, reversa y mantener (gate, activado por defecto).

@@ -94,6 +94,57 @@ static void testAnalysis()
     CHECK (s.onsets.empty() && s.bpm == 0.0, "el silencio no deberia tener golpes");
 }
 
+/** Frases tipo "chop vocal": notas largas con un eco mas debil encima, como en un loop de voz. */
+static void testVocalChops()
+{
+    std::printf ("Golpes en frases largas\n");
+    const double bpm = 130.0;
+    const int total = (int) std::llround (kRate * 60.0 / bpm * 32.0);   // 8 compases
+    juce::AudioBuffer<float> buf (2, total);
+    buf.clear();
+    std::vector<juce::int64> mains;
+    auto addNote = [&] (juce::int64 start, float amp, double freq, double decay)
+    {
+        for (int i = 0; i < (int) (kRate * 1.2) && start + i < total; ++i)
+        {
+            const float env = std::min (1.0f, (float) i / 200.0f) * std::exp (-(float) i / (float) (kRate * decay));
+            float s = 0.0f;
+            for (int h = 1; h <= 5; ++h)
+                s += (float) std::sin (2.0 * juce::MathConstants<double>::pi * freq * h * i / kRate) / (float) h;
+            buf.addSample (0, (int) start + i, amp * env * s * 0.4f);
+            buf.addSample (1, (int) start + i, amp * env * s * 0.4f);
+        }
+    };
+    for (int n = 0; n < 9; ++n)
+    {
+        const auto start = (juce::int64) (n * kRate * 60.0 / bpm * 4.0);   // una por compas
+        if (start >= total) break;
+        mains.push_back (start);
+        const double freq = 180.0 + 30.0 * (n % 4);
+        addNote (start, 0.9f, freq, 0.35);
+        addNote (start + (juce::int64) (kRate * 0.33), 0.3f, freq, 0.25);   // el eco, con la nota aun sonando
+    }
+
+    const auto a = eng::analyse (buf, kRate);
+    const auto slices = eng::makeSlices (eng::SliceMode::transients, a, total, kRate, bpm, 1.0, 0, 0.5);
+    int found = 0;
+    for (auto m : mains)
+        for (auto s : slices)
+            if (std::abs ((double) (s - m)) < kRate * 0.01) { ++found; break; }
+    const auto more = eng::makeSlices (eng::SliceMode::transients, a, total, kRate, bpm, 1.0, 0, 1.0);
+    const auto fewer = eng::makeSlices (eng::SliceMode::transients, a, total, kRate, bpm, 1.0, 0, 0.0);
+    std::printf ("  %d frases: %d cortes (%d en su lugar); sensibilidad al maximo %d, al minimo %d; BPM %.2f\n",
+                 (int) mains.size(), (int) slices.size(), found, (int) more.size(), (int) fewer.size(), a.bpm);
+    CHECK (found == (int) mains.size(), "faltan frases principales");
+    CHECK (slices.size() == mains.size(), "no deberia cortar en los ecos: %d cortes", (int) slices.size());
+    CHECK (more.size() > slices.size(), "mas sensibilidad deberia dar mas cortes");
+    CHECK (fewer.size() <= slices.size() && ! fewer.empty(), "menos sensibilidad no deberia dar mas cortes");
+    CHECK (std::abs (a.bpm - 130.0) < 0.5, "BPM del loop: %.2f en vez de 130", a.bpm);
+
+    CHECK (eng::bpmFromFileName ("91V_VHA3_130_vocal_vocoder_chop_wait_for_you_echo_A#m") == 130.0, "tempo del nombre de archivo");
+    CHECK (eng::bpmFromFileName ("kick 01") == 0.0, "no deberia inventar un tempo");
+}
+
 static void testSlices()
 {
     std::printf ("Cortes\n");
@@ -238,6 +289,26 @@ static void testEngine()
         if (std::abs (tail.getSample (0, i) - tail.getSample (0, i - 1)) > 0.2f) clip = true;
     CHECK (! clip, "click al terminar el corte");
 
+    // el final del corte no debe dejar pasar nada del golpe siguiente
+    {
+        auto edge = std::make_shared<eng::AudioData>();
+        edge->sampleRate = kRate;
+        edge->buffer.setSize (2, (int) kRate * 2);
+        edge->buffer.clear();
+        for (int i = (int) kRate; i < (int) kRate * 2; ++i)
+        {
+            edge->buffer.setSample (0, i, 0.9f);
+            edge->buffer.setSample (1, i, 0.9f);
+        }
+        engine.setPlayable (makePlayable (edge, { 0, (juce::int64) kRate }));
+        juce::MidiBuffer me;
+        me.addEvent (juce::MidiMessage::noteOn (1, 36, 1.0f), 0);
+        auto o = render (me, 100);
+        CHECK (o.getMagnitude (0, o.getNumSamples()) == 0.0f, "el corte dejo pasar el golpe siguiente: %.3f", o.getMagnitude (0, o.getNumSamples()));
+        engine.setPlayable (makePlayable (audio, { 0, (juce::int64) kRate, (juce::int64) kRate * 2, (juce::int64) kRate * 3 }));
+        render (none, 2);
+    }
+
     // afinacion del pad: +12 -> el doble de frecuencia
     engine.pads[0].pitch = 12.0f;
     juce::MidiBuffer m2;
@@ -326,6 +397,7 @@ static void testEngine()
 int main()
 {
     testAnalysis();
+    testVocalChops();
     testSlices();
     testStretch();
     testEngine();

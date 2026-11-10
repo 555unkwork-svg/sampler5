@@ -7,6 +7,7 @@ namespace eng
 namespace
 {
 constexpr float kFastFadeMs = 5.0f;
+constexpr float kEdgeFadeMs = 3.0f;
 constexpr int kUiNoteBase = 1000;
 
 inline float readSample (const float* data, int length, int index) noexcept
@@ -238,16 +239,14 @@ void SamplerEngine::renderVoices (juce::AudioBuffer<float>& out, int startSample
         const float stepL = (targetL - v.gainL) / (float) numSamples;
         const float stepR = (targetR - v.gainR) / (float) numSamples;
 
-        const float endFadeMs = std::max (kFastFadeMs, settings.releaseMs);
         const double step = v.reverse ? -v.rate : v.rate;
+
+        // fundido de borde: el corte se apaga justo antes de su final, sin pasarse al golpe siguiente
+        const double edgeLen = std::max (1.0, std::min (v.rate * hostRate * (double) kEdgeFadeMs * 0.001,
+                                                        (v.endP - v.startP) * 0.25));
 
         for (int i = 0; i < numSamples; ++i)
         {
-            // fin del corte: no cortamos en seco, soltamos y seguimos leyendo un poquito
-            if (v.stage != Voice::Stage::release
-                && (v.reverse ? v.pos <= v.startP : v.pos >= v.endP))
-                startRelease (v, v.gate ? kFastFadeMs : endFadeMs);
-
             switch (v.stage)
             {
                 case Voice::Stage::attack:
@@ -261,14 +260,16 @@ void SamplerEngine::renderVoices (juce::AudioBuffer<float>& out, int startSample
                     break;
             }
 
-            if (v.env <= 0.0f || v.pos < -2.0 || v.pos > (double) length + 2.0)
+            const double remaining = v.reverse ? v.pos - v.startP : v.endP - v.pos;
+            if (v.env <= 0.0f || remaining <= 0.0)
             {
                 v.active = false;
                 break;
             }
 
-            const float l = hermite (srcL, length, v.pos) * v.env;
-            const float r = hermite (srcR, length, v.pos) * v.env;
+            const float amp = v.env * (float) std::min (1.0, remaining / edgeLen);
+            const float l = hermite (srcL, length, v.pos) * amp;
+            const float r = hermite (srcR, length, v.pos) * amp;
             v.gainL += stepL;
             v.gainR += stepR;
 

@@ -28,5 +28,9 @@ enum class SliceMode { transients = 0, grid, equal, random, manual };
     gridBeats: tamano de la grilla en tiempos (negras), solo para SliceMode::grid. */
 std::vector<juce::int64> makeSlices (SliceMode mode, const Analysis& analysis,
                                      juce::int64 numSamples, double sampleRate,
-                                     double bpm, double gridBeats, juce::int64 randomSeed);
+                                     double bpm, double gridBeats, juce::int64 randomSeed,
+                                     double sensitivity = 0.5);
+
+/** Busca un tempo escrito en el nombre del archivo (ej. "loop_130_Am.wav"). 0 si no hay. */
+double bpmFromFileName (const juce::String& nameWithoutExtension);
 }

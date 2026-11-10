@@ -237,6 +237,18 @@ void SamplerProcessor::finishLoad (LoadResult& result)
         else
         {
             sampleBpm = analysis.bpm > 0.0 ? analysis.bpm : 120.0;
+
+            // si el nombre del archivo trae el tempo y es coherente con lo detectado, le creemos
+            const double named = eng::bpmFromFileName (sampleFile.getFileNameWithoutExtension());
+            if (named > 0.0)
+            {
+                bool coherent = analysis.bpm <= 0.0;
+                for (double ratio : { 1.0, 0.5, 2.0, 0.75, 4.0 / 3.0, 2.0 / 3.0, 1.5 })
+                    if (std::abs (analysis.bpm * ratio - named) < named * 0.03)
+                        coherent = true;
+                if (coherent)
+                    sampleBpm = named;
+            }
         }
     }
 
@@ -260,7 +272,7 @@ void SamplerProcessor::autoSlice (eng::SliceMode mode, int gridIndexToUse)
 
     const auto points = eng::makeSlices (mode, analysis, source->buffer.getNumSamples(), source->sampleRate,
                                          sampleBpm, gridBeatsForIndex (gridIndex),
-                                         juce::Time::currentTimeMillis());
+                                         juce::Time::currentTimeMillis(), sensitivity);
     {
         const juce::ScopedLock lock (modelLock);
         for (int i = 0; i < eng::kNumPads; ++i)
@@ -272,6 +284,16 @@ void SamplerProcessor::autoSlice (eng::SliceMode mode, int gridIndexToUse)
     }
     rebuildPlayable();
     sendChangeMessage();
+}
+
+void SamplerProcessor::setSensitivity (double newSensitivity)
+{
+    newSensitivity = juce::jlimit (0.0, 1.0, newSensitivity);
+    if (std::abs (newSensitivity - sensitivity) < 1.0e-4)
+        return;
+    sensitivity = newSensitivity;
+    if (sliceMode == eng::SliceMode::transients)
+        autoSlice (sliceMode, gridIndex);
 }
 
 void SamplerProcessor::setSliceStart (int pad, juce::int64 position)
@@ -501,8 +523,8 @@ juce::String SamplerProcessor::getStatusText() const
     if (syncParam->load() > 0.5f)
     {
         const double host = hostBpm.load();
-        text << (host > 0.0 ? "  |  proyecto a " + juce::String (host, 1) + " BPM"
-                            : "  |  el host no informa tempo");
+        text << (host > 0.0 ? "  |  proyecto " + juce::String (host, 1) + " BPM, velocidad x" + juce::String (currentSpeed(), 2)
+                            : "  |  SYNC sin efecto: no llega el tempo del proyecto");
     }
     return text;
 }
@@ -524,6 +546,7 @@ void SamplerProcessor::getStateInformation (juce::MemoryBlock& destData)
         root.setAttribute ("bpm", sampleBpm);
         root.setAttribute ("sliceMode", (int) sliceMode);
         root.setAttribute ("grid", gridIndex);
+        root.setAttribute ("sens", sensitivity);
         root.setAttribute ("selectedPad", selectedPad.load());
 
         auto* pads = root.createNewChildElement ("Pads");
@@ -558,6 +581,7 @@ void SamplerProcessor::setStateInformation (const void* data, int sizeInBytes)
         const juce::ScopedLock lock (modelLock);
         sliceMode = (eng::SliceMode) juce::jlimit (0, 4, root->getIntAttribute ("sliceMode", 0));
         gridIndex = juce::jlimit (0, 4, root->getIntAttribute ("grid", 2));
+        sensitivity = juce::jlimit (0.0, 1.0, root->getDoubleAttribute ("sens", 0.5));
     }
     selectedPad.store (juce::jlimit (0, eng::kNumPads - 1, root->getIntAttribute ("selectedPad", 0)));
 

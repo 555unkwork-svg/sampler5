@@ -66,6 +66,8 @@ public:
 
     eng::SliceMode getSliceMode() const { return sliceMode; }
     int getGridIndex() const { return gridIndex; }
+    double getSensitivity() const { return sensitivity; }
+    void setSensitivity (double newSensitivity);
     void autoSlice (eng::SliceMode mode, int gridIndexToUse);
     void setSliceStart (int pad, juce::int64 position);
     int addSlice (juce::int64 position);   // devuelve el pad usado, o -1 si no queda ninguno libre
@@ -135,6 +137,7 @@ private:
     std::array<Slice, eng::kNumPads> slices {};
     eng::SliceMode sliceMode = eng::SliceMode::transients;
     int gridIndex = 2;
+    double sensitivity = 0.5;
     std::atomic<int> selectedPad { 0 };
     juce::String errorText;
 

@@ -113,12 +113,86 @@ juce::int64 refineOnset (const std::vector<float>& mono, int roughEnd)
     if (peakIdx < win)
         floorLevel = 0.0f;
 
-    const float threshold = floorLevel + 0.2f * (peak - floorLevel);
+    const float threshold = floorLevel + 0.1f * (peak - floorLevel);
     int idx = peakIdx;
     while (idx > 0 && env[(size_t) idx] > threshold)
         --idx;
 
-    return (juce::int64) from + idx;
+    // como en los samplers clasicos: el corte va en un cruce por cero, asi no hace click
+    int pos = from + idx;
+    const int limit = std::max (1, pos - 96);
+    for (int i = pos; i >= limit; --i)
+        if ((mono[(size_t) i - 1] <= 0.0f) != (mono[(size_t) i] <= 0.0f))
+            return i;
+
+    return pos;
+}
+
+/** Cuanto sube el nivel en el golpe respecto de lo que venia sonando justo antes. */
+float levelRise (const std::vector<float>& mono, juce::int64 position, double sampleRate)
+{
+    const int n = (int) mono.size();
+    const int pos = (int) position;
+    auto meanAbs = [&] (int a, int b)
+    {
+        a = juce::jlimit (0, n, a);
+        b = juce::jlimit (0, n, b);
+        if (b <= a) return 0.0f;
+        double s = 0.0;
+        for (int i = a; i < b; ++i) s += std::abs (mono[(size_t) i]);
+        return (float) (s / (b - a));
+    };
+
+    const int ms = std::max (1, (int) (sampleRate * 0.001));
+    const float before = meanAbs (pos - 40 * ms, pos - 3 * ms);
+    float after = 0.0f;
+    for (int k = 0; k < 6; ++k)
+        after = std::max (after, meanAbs (pos + k * 10 * ms, pos + (k + 1) * 10 * ms));
+    return after / (before + 1.0e-5f);
+}
+
+/** Si el audio es un loop, su largo es una cantidad redonda de compases: lo usamos para
+    corregir errores tipicos del tempo (mitad, doble, 3/4, 4/3...). */
+double fitBpmToLoopLength (double bpm, double seconds)
+{
+    if (bpm <= 0.0 || seconds <= 0.5 || seconds > 60.0)
+        return bpm;
+
+    double bestErr = 1.0, bestBpm = bpm;
+    for (double ratio : { 1.0, 0.5, 2.0, 0.75, 4.0 / 3.0, 2.0 / 3.0, 1.5 })
+    {
+        const double c = bpm * ratio;
+        if (c < 60.0 || c >= 200.0)
+            continue;
+        for (int bars : { 1, 2, 4, 8, 16, 32, 64 })
+        {
+            const double target = bars * 4.0;
+            const double err = std::abs (seconds * c / 60.0 - target) / target;
+            // ante la duda nos quedamos con la estimacion original
+            if (err < bestErr - (ratio == 1.0 ? 0.0 : 0.005))
+            {
+                bestErr = err;
+                bestBpm = target * 60.0 / seconds;
+            }
+        }
+    }
+
+    if (bestErr > 0.015)
+    {
+        // la estimacion no encaja con el largo. Si el largo solo ya da un tempo entero exacto,
+        // es casi seguro un loop recortado a compases: le creemos al largo
+        double choice = 0.0;
+        for (int bars : { 1, 2, 4, 8, 16, 32, 64 })
+        {
+            const double c = bars * 240.0 / seconds;
+            if (c >= 70.0 && c < 180.0 && std::abs (c - std::round (c)) < 0.06
+                && (choice == 0.0 || std::abs (std::log (c / bpm)) < std::abs (std::log (choice / bpm))))
+                choice = std::round (c);
+        }
+        return choice > 0.0 ? choice : bpm;
+    }
+    const double rounded = std::round (bestBpm);
+    return std::abs (bestBpm - rounded) < 0.35 ? rounded : std::round (bestBpm * 100.0) / 100.0;
 }
 
 double estimateBpm (const std::vector<float>& flux, double sampleRate)
@@ -224,7 +298,7 @@ Analysis analyse (const juce::AudioBuffer<float>& audio, double sampleRate)
     const double framesPerSecond = sampleRate / kHop;
     const int localRadius = std::max (2, (int) std::lround (framesPerSecond * 0.03));
     const int meanRadius = std::max (4, (int) std::lround (framesPerSecond * 0.10));
-    const juce::int64 minGap = (juce::int64) (sampleRate * 0.05);
+    const juce::int64 minGap = (juce::int64) (sampleRate * 0.08);
 
     for (int f = 0; f < frames; ++f)
     {
@@ -251,23 +325,35 @@ Analysis analyse (const juce::AudioBuffer<float>& audio, double sampleRate)
             continue;
 
         const auto pos = refineOnset (mono, (f + 1) * kHop);
+
+        // un golpe "de verdad" arranca desde un nivel mas bajo; un cambio dentro de una
+        // nota que ya venia sonando (una silaba, un eco) pesa mucho menos
+        const float rise = levelRise (mono, pos, sampleRate);
+        const float weight = 0.25f + 0.75f * juce::jlimit (0.0f, 1.0f, (rise - 1.0f) / 1.5f);
+        const float strength = v / maxFlux * weight;
+
         if (! result.onsets.empty() && pos - result.onsets.back().position < minGap)
         {
-            if (v > result.onsets.back().strength)
-                result.onsets.back().strength = v;
+            result.onsets.back().strength = std::max (result.onsets.back().strength, strength);
             continue;
         }
 
-        result.onsets.push_back ({ pos, v / maxFlux });
+        result.onsets.push_back ({ pos, strength });
     }
 
-    result.bpm = estimateBpm (flux, sampleRate);
+    float strongest = 0.0f;
+    for (const auto& o : result.onsets) strongest = std::max (strongest, o.strength);
+    if (strongest > 0.0f)
+        for (auto& o : result.onsets) o.strength /= strongest;
+
+    result.bpm = fitBpmToLoopLength (estimateBpm (flux, sampleRate), audio.getNumSamples() / sampleRate);
     return result;
 }
 
 std::vector<juce::int64> makeSlices (SliceMode mode, const Analysis& analysis,
                                      juce::int64 numSamples, double sampleRate,
-                                     double bpm, double gridBeats, juce::int64 randomSeed)
+                                     double bpm, double gridBeats, juce::int64 randomSeed,
+                                     double sensitivity)
 {
     std::vector<juce::int64> out;
     if (numSamples <= 0)
@@ -289,13 +375,15 @@ std::vector<juce::int64> makeSlices (SliceMode mode, const Analysis& analysis,
                 equalParts();
                 break;
             }
-            if ((int) onsets.size() > kNumPads)
-            {
-                // nos quedamos con los mas fuertes
-                std::stable_sort (onsets.begin(), onsets.end(),
-                                  [] (const Onset& a, const Onset& b) { return a.strength > b.strength; });
-                onsets.resize ((size_t) kNumPads);
-            }
+            // nos quedamos con los mas fuertes: la sensibilidad decide cuantos entran
+            std::stable_sort (onsets.begin(), onsets.end(),
+                              [] (const Onset& a, const Onset& b) { return a.strength > b.strength; });
+            const double s = juce::jlimit (0.0, 1.0, sensitivity);
+            const float threshold = (float) (0.6 * (1.0 - s) * (1.0 - s));
+            size_t keep = 1;
+            while (keep < onsets.size() && keep < (size_t) kNumPads && onsets[keep].strength >= threshold)
+                ++keep;
+            onsets.resize (keep);
             for (const auto& o : onsets)
                 out.push_back (o.position);
             break;
@@ -364,5 +452,19 @@ std::vector<juce::int64> makeSlices (SliceMode mode, const Analysis& analysis,
 
     std::sort (out.begin(), out.end());
     return out;
+}
+
+double bpmFromFileName (const juce::String& name)
+{
+    juce::StringArray tokens;
+    tokens.addTokens (name, " _-.()[]", "");
+    for (const auto& t : tokens)
+        if (t.length() >= 2 && t.length() <= 3 && t.containsOnly ("0123456789"))
+        {
+            const int v = t.getIntValue();
+            if (v >= 60 && v <= 200)
+                return (double) v;
+        }
+    return 0.0;
 }
 }

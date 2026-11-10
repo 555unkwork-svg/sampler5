@@ -263,15 +263,23 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
         addAndMakeVisible (*b);
     for (auto* b : { &syncButton, &stretchButton, &monoButton, &keysButton, &reverseButton, &gateButton })
         addAndMakeVisible (*b);
-    for (auto* l : { &fileLabel, &bpmCaption, &bpmLabel, &statusLabel, &padTitle, &modeCaption, &gridCaption })
+    for (auto* l : { &fileLabel, &bpmCaption, &bpmLabel, &statusLabel, &padTitle, &modeCaption, &gridCaption, &sensCaption })
         addAndMakeVisible (*l);
+    addAndMakeVisible (sensSlider);
     addAndMakeVisible (modeBox);
     addAndMakeVisible (gridBox);
 
     bpmCaption.setText ("BPM", juce::dontSendNotification);
     modeCaption.setText ("Cortar por", juce::dontSendNotification);
     gridCaption.setText ("Grilla", juce::dontSendNotification);
-    for (auto* l : { &bpmCaption, &modeCaption, &gridCaption, &statusLabel })
+    sensCaption.setText ("Sensib.", juce::dontSendNotification);
+    sensSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    sensSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    sensSlider.setRange (0.0, 1.0, 0.01);
+    sensSlider.setDoubleClickReturnValue (true, 0.5);
+    sensSlider.setValue (proc.getSensitivity(), juce::dontSendNotification);
+    sensSlider.onValueChange = [this] { proc.setSensitivity (sensSlider.getValue()); };
+    for (auto* l : { &bpmCaption, &modeCaption, &gridCaption, &sensCaption, &statusLabel })
         l->setColour (juce::Label::textColourId, kDim);
     statusLabel.setJustificationType (juce::Justification::centredRight);
     padTitle.setFont (juce::FontOptions (16.0f, juce::Font::bold));
@@ -412,6 +420,8 @@ void SamplerEditor::refresh()
                       juce::dontSendNotification);
     modeBox.setSelectedItemIndex ((int) proc.getSliceMode(), juce::dontSendNotification);
     gridBox.setSelectedItemIndex (proc.getGridIndex(), juce::dontSendNotification);
+    sensSlider.setValue (proc.getSensitivity(), juce::dontSendNotification);
+    sensSlider.setEnabled (proc.getSliceMode() == eng::SliceMode::transients);
 
     if (proc.engine.learnPad.load() >= 0 && proc.engine.learnPad.load() != pad)
         proc.engine.learnPad.store (pad);   // el aprendizaje sigue al pad elegido
@@ -486,11 +496,14 @@ void SamplerEditor::resized()
 
     auto sliceRow = area.removeFromTop (28);
     modeCaption.setBounds (sliceRow.removeFromLeft (75));
-    modeBox.setBounds (sliceRow.removeFromLeft (150));
-    sliceRow.removeFromLeft (12);
+    modeBox.setBounds (sliceRow.removeFromLeft (130));
+    sliceRow.removeFromLeft (10);
     gridCaption.setBounds (sliceRow.removeFromLeft (45));
-    gridBox.setBounds (sliceRow.removeFromLeft (130));
-    sliceRow.removeFromLeft (12);
+    gridBox.setBounds (sliceRow.removeFromLeft (120));
+    sliceRow.removeFromLeft (10);
+    sensCaption.setBounds (sliceRow.removeFromLeft (52));
+    sensSlider.setBounds (sliceRow.removeFromLeft (100));
+    sliceRow.removeFromLeft (10);
     sliceButton.setBounds (sliceRow.removeFromLeft (80));
     statusLabel.setBounds (sliceRow);
 

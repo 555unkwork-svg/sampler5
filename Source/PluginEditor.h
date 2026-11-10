@@ -91,7 +91,8 @@ private:
 
     juce::TextButton loadButton { "Cargar" }, halfButton { "/2" }, doubleButton { "x2" },
                      sliceButton { "Cortar" }, learnButton { "Aprender MIDI" };
-    juce::Label fileLabel, bpmCaption, bpmLabel, statusLabel, padTitle, modeCaption, gridCaption;
+    juce::Label fileLabel, bpmCaption, bpmLabel, statusLabel, padTitle, modeCaption, gridCaption, sensCaption;
+    juce::Slider sensSlider;
     juce::ComboBox modeBox, gridBox;
     juce::ToggleButton syncButton { "SYNC" }, stretchButton { "STRETCH" }, monoButton { "Mono" },
                        keysButton { "Teclas" }, reverseButton { "Reversa" }, gateButton { "Mantener" };

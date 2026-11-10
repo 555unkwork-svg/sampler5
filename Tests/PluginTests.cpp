@@ -137,7 +137,7 @@ static void runTests (const juce::String& screenshotPath)
     const int plain = playAndMeasure (*proc, 60, 80, &peak);
     std::printf ("  pad 1 sin sync: suena %d muestras (corte de 22050), pico %.2f\n", plain, peak);
     CHECK (peak > 0.3f, "el pad no suena");
-    CHECK (plain > 22050 && plain < 22050 + 2000, "duracion sin sync: %d", plain);
+    CHECK (plain > 21500 && plain <= 22050, "duracion sin sync: %d (no debe pasarse del corte)", plain);
 
     // proyecto a 150 BPM con sync + stretch: el corte dura 22050 / 1.25
     playHead.bpm = 150.0;
@@ -147,14 +147,14 @@ static void runTests (const juce::String& screenshotPath)
     juce::Thread::sleep (200);
     const int synced = playAndMeasure (*proc, 60, 80);
     std::printf ("  pad 1 con sync a 150 BPM (stretch): %d muestras (esperado ~17640)\n", synced);
-    CHECK (synced > 17640 - 300 && synced < 17640 + 2000, "duracion con sync+stretch: %d", synced);
+    CHECK (synced > 17640 - 400 && synced <= 17640 + 2, "duracion con sync+stretch: %d", synced);
 
     // sync sin stretch: misma duracion, por remuestreo
     onMessageThread ([&] { proc->apvts.getParameter ("stretch")->setValueNotifyingHost (0.0f); });
     juce::Thread::sleep (300);
     const int resampled = playAndMeasure (*proc, 60, 80);
     std::printf ("  pad 1 con sync a 150 BPM (sin stretch): %d muestras\n", resampled);
-    CHECK (resampled > 17640 - 300 && resampled < 17640 + 2000, "duracion con sync sin stretch: %d", resampled);
+    CHECK (resampled > 17640 - 400 && resampled <= 17640 + 2, "duracion con sync sin stretch: %d", resampled);
 
     std::printf ("Estado guardado\n");
     juce::MemoryBlock state;
