@@ -809,6 +809,10 @@ void SamplerProcessor::timerCallback()
         sendChangeMessage();
     }
 
+    const int hit = engine.lastHitPad.exchange (-1);
+    if (hit >= 0 && followPads && hit != selectedPad.load())
+        setSelectedPad (hit);
+
     updateTempoTarget();
     engine.purgeRetired();
 }
@@ -861,6 +865,7 @@ std::unique_ptr<juce::XmlElement> SamplerProcessor::buildStateXml()
         root.setAttribute ("regionStart", juce::String (regionStart));
         root.setAttribute ("regionEnd", juce::String (regionEnd));
         root.setAttribute ("snap", snapEnabled);
+        root.setAttribute ("followPads", followPads);
         root.setAttribute ("snapMode", (int) snapMode);
         root.setAttribute ("selectedPad", selectedPad.load());
 
@@ -945,6 +950,7 @@ void SamplerProcessor::applyStateXml (const juce::XmlElement& rootXml, std::shar
     info.regionStart = std::max<juce::int64> (0, root->getStringAttribute ("regionStart", "0").getLargeIntValue());
     info.regionEnd = root->getStringAttribute ("regionEnd", "-1").getLargeIntValue();
     snapEnabled = root->getBoolAttribute ("snap", true);
+    followPads = root->getBoolAttribute ("followPads", true);
     snapMode = (SnapMode) juce::jlimit (0, 3, root->getIntAttribute ("snapMode", 0));
 
     {

@@ -37,6 +37,7 @@ SamplerEngine::SamplerEngine()
     {
         padNote[(size_t) i].store (kDefaultFirstNote + i);
         padPlayPos[(size_t) i].store (-1.0f);
+        uiVelocity[(size_t) i].store (1.0f);
     }
 }
 
@@ -72,10 +73,12 @@ void SamplerEngine::purgeRetired()
                    retired.end());
 }
 
-void SamplerEngine::triggerPadFromUI (int pad, bool down)
+void SamplerEngine::triggerPadFromUI (int pad, bool down, float velocity)
 {
     if (pad < 0 || pad >= kNumPads)
         return;
+    if (down)
+        uiVelocity[(size_t) pad].store (juce::jlimit (0.0f, 1.0f, velocity));
     (down ? uiDown : uiUp).fetch_or (1u << pad);
 }
 
@@ -278,6 +281,8 @@ void SamplerEngine::queueMidi (const juce::MidiMessage& m, int time, int numSamp
         {
             for (int i = 0; i < kNumPads; ++i)
                 if (padNote[(size_t) i].load() == note) { e.pad = i; break; }
+            if (e.pad >= 0)
+                lastHitPad.store (e.pad);   // como en una MPC: el pad tocado pasa a ser el pad en edicion
         }
 
         if (e.pad < 0)
@@ -466,7 +471,7 @@ void SamplerEngine::process (juce::AudioBuffer<float>& out, const juce::MidiBuff
     for (int i = 0; i < kNumPads; ++i)
     {
         if ((down & (1u << i)) != 0)
-            addEvent ({ 0, true, kUiNoteBase + i, i, 0.0f, 1.0f }, numSamples);
+            addEvent ({ 0, true, kUiNoteBase + i, i, 0.0f, uiVelocity[(size_t) i].load() }, numSamples);
         if ((up & (1u << i)) != 0)
             addEvent ({ 0, false, kUiNoteBase + i, i, 0.0f, 1.0f }, numSamples);
     }

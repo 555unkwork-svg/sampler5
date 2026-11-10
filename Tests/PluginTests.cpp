@@ -157,6 +157,88 @@ static void runTests (const juce::String& screenshotPath)
     std::printf ("  pad 1 con sync a 150 BPM (sin stretch): %d muestras\n", resampled);
     CHECK (resampled > 17640 - 400 && resampled <= 17640 + 2, "duracion con sync sin stretch: %d", resampled);
 
+    std::printf ("Parametros nuevos, de punta a punta\n");
+    {
+        auto setParam = [&] (const juce::String& id, float value)
+        {
+            onMessageThread ([&]
+            {
+                auto* p = proc->apvts.getParameter (id);
+                CHECK (p != nullptr, "falta el parametro %s", id.toRawUTF8());
+                if (p != nullptr)
+                    p->setValueNotifyingHost (p->convertTo0to1 (value));
+            });
+        };
+        auto level = [&] (int note, int channel = 0)
+        {
+            const int block = 512;
+            float peakL = 0.0f, peakR = 0.0f;
+            int last = 0;
+            for (int b = 0; b < 60; ++b)
+            {
+                juce::AudioBuffer<float> buffer (2, block);
+                juce::MidiBuffer midi;
+                if (b == 0) midi.addEvent (juce::MidiMessage::noteOn (1, note, 1.0f), 0);
+                if (b == 2) midi.addEvent (juce::MidiMessage::noteOff (1, note), 0);
+                proc->processBlock (buffer, midi);
+                peakL = std::max (peakL, buffer.getMagnitude (0, 0, block));
+                peakR = std::max (peakR, buffer.getMagnitude (1, 0, block));
+                if (buffer.getMagnitude (0, 0, block) + buffer.getMagnitude (1, 0, block) > 1.0e-4f) last = b;
+            }
+            return channel == 0 ? peakL : (channel == 1 ? peakR : (float) last);
+        };
+
+        setParam ("sync", 0.0f);
+        onMessageThread ([&] { proc->autoSlice (eng::SliceMode::grid, 2); });
+        juce::Thread::sleep (200);
+        const float base = level (60);
+        CHECK (base > 0.3f, "nivel base %.2f", base);
+
+        setParam ("p1_mute", 1.0f);      CHECK (level (60) == 0.0f, "SILENCIAR no silencia");                 setParam ("p1_mute", 0.0f);
+        setParam ("p1_pregain", 6.0f);   CHECK (level (60) > base * 1.8f, "GANANCIA no sube");                setParam ("p1_pregain", 0.0f);
+        setParam ("p1_filter", 1.0f); setParam ("p1_cutoff", 30.0f);
+        CHECK (level (60) < base * 0.5f, "FILTRO no filtra: %.2f de %.2f", level (60), base);
+        setParam ("p1_filter", 0.0f); setParam ("p1_cutoff", 20000.0f);
+        setParam ("pan", 1.0f); level (60);   // el paneo cambia con una rampa corta: una nota para que se asiente
+        CHECK (level (60, 0) < 0.001f && level (60, 1) > 0.2f, "PAN global");
+        setParam ("pan", 0.0f); level (60);
+        const float held = level (60, 2);
+        setParam ("p1_loop", 1.0f);
+        juce::MidiBuffer hold;
+        hold.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
+        float lateLevel = 0.0f;
+        for (int b = 0; b < 120; ++b)
+        {
+            juce::AudioBuffer<float> buffer (2, 512);
+            proc->processBlock (buffer, b == 0 ? hold : *std::make_unique<juce::MidiBuffer>());
+            if (b > 100) lateLevel = std::max (lateLevel, buffer.getMagnitude (0, 0, 512));
+        }
+        CHECK (lateLevel > 0.05f, "LOOP no repite el corte");
+        setParam ("p1_loop", 0.0f);
+        onMessageThread ([&] { proc->engine.allNotesOff(); });
+        level (61);
+        setParam ("midiin", 0.0f);       CHECK (level (60) == 0.0f, "ENTRADA MIDI apagada sigue sonando");     setParam ("midiin", 1.0f);
+        setParam ("rangelo", 70.0f);     CHECK (level (60) == 0.0f, "RANGO MIDI");                           setParam ("rangelo", 0.0f);
+        setParam ("midich", 5.0f);       CHECK (level (60) == 0.0f, "CANAL MIDI");                           setParam ("midich", 0.0f);
+        level (63);
+        juce::Thread::sleep (150);
+        int selectedNow = -1;
+        onMessageThread ([&] { selectedNow = proc->getSelectedPad(); });
+        CHECK (selectedNow == 3, "tocar el pad 4 por MIDI deberia elegirlo (quedo el %d)", selectedNow + 1);
+        std::printf ("  silenciar, ganancia, filtro, pan, loop y MIDI llegan al sonido (duracion base %d bloques)\n", (int) held);
+        setParam ("sync", 1.0f);
+    }
+
+    if (screenshotPath.isNotEmpty())
+        onMessageThread ([&]
+        {
+            juce::MemoryBlock block;
+            proc->apvts.getParameter ("sync")->setValueNotifyingHost (0.0f);
+            proc->getStateInformation (block);
+            juce::File (screenshotPath).getSiblingFile ("estado_para_host.bin").replaceWithData (block.getData(), block.getSize());
+            proc->apvts.getParameter ("sync")->setValueNotifyingHost (1.0f);
+        });
+
     std::printf ("Cortes: fin, nombres, favoritos, zona e iman\n");
     onMessageThread ([&]
     {

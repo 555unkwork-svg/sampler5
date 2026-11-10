@@ -121,6 +121,9 @@ public:
     bool hasEmbeddedAudio() const { return embedded != nullptr; }
 
     int getSelectedPad() const { return selectedPad.load(); }
+    /** Seguir pad: el pad tocado por MIDI pasa a ser el elegido (como en una MPC). */
+    bool isFollowingPads() const { return followPads; }
+    void setFollowPads (bool follow) { followPads = follow; sendChangeMessage(); }
     void setSelectedPad (int pad);
 
     static juce::String padParamId (int pad, const char* name);
@@ -201,6 +204,7 @@ private:
     double manualBpm = 120.0;
     juce::int64 regionStart = 0, regionEnd = -1;   // -1: hasta el final
     bool snapEnabled = true;
+    bool followPads = true;
     int keyRoot = -1;
     bool keyMinor = false;
     std::shared_ptr<const juce::MemoryBlock> embedded;   // el audio en FLAC, para guardarlo en el proyecto

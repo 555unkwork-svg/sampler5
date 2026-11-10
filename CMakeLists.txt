@@ -7,7 +7,7 @@ set(PLUGIN_MFR_CODE  "Mmrc")           # 4 caracteres, al menos una mayuscula
 set(PLUGIN_CODE      "Smp5")           # 4 caracteres, exactamente una mayuscula
 # -----------------------------------------------------------------------------
 
-project(Sampler5 VERSION 1.3.0 LANGUAGES C CXX)
+project(Sampler5 VERSION 1.3.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -100,6 +100,19 @@ if(SAMPLER_BUILD_TESTS)
     target_include_directories(PluginTests PRIVATE Source ${juce_SOURCE_DIR}/modules)
     target_compile_definitions(PluginTests PRIVATE $<TARGET_PROPERTY:Sampler5,COMPILE_DEFINITIONS>)
     target_link_libraries(PluginTests PRIVATE Sampler5)
+
+    # arnes para probar la interfaz con clics reales (solo desarrollo)
+    add_executable(UiHarness Tests/UiHarness.cpp)
+    target_include_directories(UiHarness PRIVATE Source ${juce_SOURCE_DIR}/modules)
+    target_compile_definitions(UiHarness PRIVATE $<TARGET_PROPERTY:Sampler5,COMPILE_DEFINITIONS>)
+    target_link_libraries(UiHarness PRIVATE Sampler5)
+
+    # prueba con el VST3 ya compilado, cargado como lo haria un DAW
+    juce_add_console_app(HostTests PRODUCT_NAME "HostTests")
+    target_sources(HostTests PRIVATE Tests/HostTests.cpp)
+    target_compile_definitions(HostTests PRIVATE JUCE_PLUGINHOST_VST3=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(HostTests PRIVATE juce::juce_audio_processors)
+    add_dependencies(HostTests Sampler5_VST3)
 
     enable_testing()
     add_test(NAME EngineTests COMMAND EngineTests)

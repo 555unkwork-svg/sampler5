@@ -96,13 +96,15 @@ public:
     void setPlayable (PlayablePtr newPlayable);
     /** Libera audios viejos que el hilo de audio ya solto. Llamar cada tanto. */
     void purgeRetired();
-    void triggerPadFromUI (int pad, bool down);
+    void triggerPadFromUI (int pad, bool down, float velocity = 1.0f);
     void allNotesOff() { panic.store (true); }
 
     //---- cualquier hilo ----
     std::array<std::atomic<int>, kNumPads> padNote;
     std::atomic<int> learnPad { -1 };          // pad esperando una nota MIDI, o -1
     std::atomic<int> lastLearnedPad { -1 };    // lo lee la interfaz y lo vuelve a -1
+    std::atomic<int> lastHitPad { -1 };        // ultimo pad tocado por MIDI (para que la interfaz lo siga)
+    std::array<std::atomic<float>, kNumPads> uiVelocity;
 
     /** Posicion de reproduccion de cada pad, 0..1 del audio original; negativo si no suena. */
     std::array<std::atomic<float>, kNumPads> padPlayPos;

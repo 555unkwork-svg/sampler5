@@ -14,10 +14,24 @@ jobs:
         run: cmake -S . -B build -A x64
 
       - name: Compilar
-        run: cmake --build build --config Release --parallel --target Sampler5_VST3 Sampler5_Standalone EngineTests
+        run: cmake --build build --config Release --parallel --target Sampler5_VST3 Sampler5_Standalone EngineTests PluginTests HostTests
 
       - name: Pruebas del motor
         run: ctest --test-dir build -C Release -R EngineTests --output-on-failure
+
+      - name: Pruebas del plugin (parametros, cortes, estado, presets e interfaz)
+        run: ./build/Release/PluginTests.exe "${{ github.workspace }}/build/interfaz-windows.png"
+
+      - name: Pruebas con el VST3 cargado como en un DAW
+        run: ./build/HostTests_artefacts/Release/HostTests.exe "${{ github.workspace }}/build/Sampler5_artefacts/Release/VST3/sampler5.vst3" "${{ github.workspace }}/build/estado_para_host.bin"
+
+      - name: Subir captura de la interfaz en Windows
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Interfaz-Windows
+          path: build/interfaz-windows*.png
+          if-no-files-found: ignore
 
       - name: Subir VST3
         uses: actions/upload-artifact@v4

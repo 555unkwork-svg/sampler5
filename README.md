@@ -28,6 +28,9 @@ Hecho con [JUCE 9](https://juce.com) y [Signalsmith Stretch](https://signalsmith
   y CANAL MIDI.
 - Pestana **MIDI**: TECLAS (el pad elegido se toca cromatico), NOTA BASE, APRENDER, ENTRADA MIDI, RANGO MIDI
   y AFTERTOUCH (a volumen).
+- **SEGUIR PAD** (pestana MIDI, encendido por defecto): el pad que tocas por MIDI pasa a ser el pad en edicion,
+  como en una MPC. Las perillas de PAD y FILTRO siempre editan el pad elegido (el de la luz roja).
+- Con el mouse, los pads suenan mas fuerte cuanto mas arriba se hace clic. CORTE y RESONANCIA encienden el filtro solos.
 - **MUESTRA**: CARGAR, INV (el audio entero al reves) y SILENCIO (corta todo lo que suena).
 - **TONAL**: detecta la tonalidad del audio (o la toma del nombre del archivo, ej. `_A#m`).
 - **PRESET**: kits con la ruta al audio, en `Documentos/sampler5/Presets` (GUARDAR, CARPETA, y Predeterminado para vaciar).

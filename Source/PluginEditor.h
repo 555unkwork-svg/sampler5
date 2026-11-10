@@ -199,7 +199,7 @@ private:
 
     juce::Label midiTitle, rangeCaption, rangeDash, aftertouchCaption;
     juce::TextButton learnButton { "Aprender" };
-    juce::ToggleButton keysButton { "Teclas" }, midiInButton { "Entrada MIDI" };
+    juce::ToggleButton keysButton { "Teclas" }, midiInButton { "Entrada MIDI" }, followButton { "Seguir pad" };
     juce::ComboBox rangeLoBox, rangeHiBox, aftertouchBox;
 
     // presets

@@ -562,8 +562,11 @@ void PadGrid::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    // como en los pads de pantalla de otros samplers: mas arriba suena mas fuerte
+    const auto bounds = padBounds (pad);
+    const float height = 1.0f - juce::jlimit (0.0f, 1.0f, (float) (e.y - bounds.getY()) / (float) std::max (1, bounds.getHeight()));
     held = pad;
-    proc.engine.triggerPadFromUI (pad, true);
+    proc.engine.triggerPadFromUI (pad, true, 0.35f + 0.65f * height);
     repaint();
 }
 
@@ -788,6 +791,15 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     filterBox.addItemList ({ "Apagado", "Pasa bajos", "Pasa altos" }, 1);
     setupKnob (padCutoff, "Corte", " Hz", tabFilter);
     setupKnob (padReso, "Resonancia", " %", tabFilter);
+    // si el filtro esta apagado y se mueve CORTE o RESONANCIA, se enciende solo (pasa bajos)
+    auto wakeFilter = [this]
+    {
+        if (auto* param = proc.apvts.getParameter (SamplerProcessor::padParamId (proc.getSelectedPad(), "filter")))
+            if (param->getValue() < 0.25f)
+                param->setValueNotifyingHost (0.5f);
+    };
+    padCutoff.slider.onDragStart = wakeFilter;
+    padReso.slider.onDragStart = wakeFilter;
     addToTab (tabPad, holdButton);
     addToTab (tabPad, shotButton);
     holdButton.onClick = [this] { setPadGate (true); };
@@ -871,6 +883,8 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     addToTab (tabMidi, keysButton);
     setupKnob (root, "Nota base", "", tabMidi);
     addToTab (tabMidi, midiInButton);
+    addToTab (tabMidi, followButton);
+    followButton.onClick = [this] { proc.setFollowPads (followButton.getToggleState()); };
     setupCaption (rangeCaption, "RANGO MIDI", juce::Justification::centredLeft, tabMidi);
     setupCaption (rangeDash, "A", juce::Justification::centred, tabMidi);
     setupCaption (aftertouchCaption, "AFTERTOUCH", juce::Justification::centredLeft, tabMidi);
@@ -1192,6 +1206,7 @@ void SamplerEditor::refresh()
     snapButton.setToggleState (proc.isSnapEnabled(), juce::dontSendNotification);
     snapBox.setSelectedItemIndex ((int) proc.getSnapMode(), juce::dontSendNotification);
     snapBox.setEnabled (proc.isSnapEnabled());
+    followButton.setToggleState (proc.isFollowingPads(), juce::dontSendNotification);
 
     // el tempo destino: el del proyecto si llega; si no, se escribe a mano
     const bool hostTempo = proc.hasHostTempo();
@@ -1589,5 +1604,7 @@ void SamplerEditor::resized()
         rangeLoBox.setBounds (range.removeFromLeft (110));
         rangeDash.setBounds (range.removeFromLeft (28));
         rangeHiBox.setBounds (range.removeFromLeft (110));
+        range.removeFromLeft (24);
+        followButton.setBounds (range.removeFromLeft (150));
     }
 }
