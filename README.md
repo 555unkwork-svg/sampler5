@@ -3,26 +3,25 @@
 Plugin VST3 para Windows: un audio, cortado en hasta 16 pads.
 Hecho con [JUCE 9](https://juce.com) y [Signalsmith Stretch](https://signalsmith-audio.co.uk/code/stretch/).
 
-## Que hace (v1.0)
+## Que hace (v1.1)
 
-- Carga WAV, AIFF, FLAC, MP3 u OGG (boton **Cargar** o arrastrando el archivo). Hasta 5 minutos.
+- Carga WAV, AIFF, FLAC, MP3 u OGG (boton **CARGAR** o arrastrando el archivo). Hasta 2 minutos.
 - Detecta golpes y estima el BPM (usa tambien el largo del loop y el tempo del nombre del archivo).
-- Corta por golpes (con control de sensibilidad), por grilla, en partes iguales, al azar o a mano.
-- Los cortes van en cruces por cero y terminan con un fundido corto antes del golpe siguiente.
-- Waveform: arrastrar un marcador lo mueve, doble clic crea un corte, clic derecho lo borra.
+- Corta por golpes (con sensibilidad), por grilla, en partes iguales, al azar o a mano. **REGENERAR** vuelve a cortar.
+- Tres vistas de la pantalla:
+  - **FUENTE**: el audio entero, para elegir la zona que se usa (bordes rojos).
+  - **CORTES**: arrastrar un marcador lo mueve, doble clic crea un corte, la manija roja mueve el final
+    del corte elegido, clic derecho abre el menu (renombrar, favorito, fin automatico, borrar).
+  - **ANALISIS**: los golpes detectados y cuales entran con la sensibilidad actual.
+- Zoom con la rueda del mouse o los botones + / - de **MUESTRA**; la mini vista muestra y mueve la parte visible.
+- **AUTOAJUSTE**: iman al mover cortes (Auto, Golpe, Cruce por cero o Grilla).
+- Los cortes **favoritos** no se pierden al regenerar. Cada corte puede tener nombre.
 - 16 pads por MIDI (desde C5 de FL Studio, nota 60) o con el mouse.
-- Por pad: volumen, paneo, tono, ataque, release, reversa y mantener (gate, activado por defecto).
-- **SYNC**: sigue el tempo del proyecto. **STRETCH**: lo hace sin cambiar el tono.
-- **Teclas**: el pad elegido se toca cromatico desde la nota base.
-- **Aprender MIDI**: asigna el pad elegido a la proxima nota que llegue.
-- Mono / poly, sensibilidad a la velocidad, master.
-- El proyecto guarda cortes, notas y parametros. El audio se guarda como ruta al archivo.
-
-- **SYNC** usa el tempo del proyecto; si el host no lo informa (o en la version standalone), usa el
-  tempo que se escribe en el campo TEMPO.
-
-- **DETECTAR** vuelve a poner el BPM detectado. **PITCH** (perilla y botones -1 / +1) cambia el tono
-  general por semitonos; con STRETCH activado no cambia la duracion.
+- Pestana **PAD**: VOL, PAN, TONO, ATAQUE, LIBERACION, INICIO, FINAL, INVERTIR y REPRODUCCION (MANTENER / DISPARO).
+- Pestana **GLOBAL**: MASTER, VEL, MONO y pitch global por semitonos (con ESTIRAR no cambia la duracion).
+- Pestana **MIDI**: TECLAS (el pad elegido se toca cromatico), NOTA BASE y APRENDER.
+- **SINCRO** sigue el tempo del proyecto (o el campo TEMPO si el host no lo informa); **ESTIRAR** lo hace sin cambiar el tono.
+- El proyecto guarda cortes, nombres, favoritos, notas y parametros. El audio se guarda como ruta al archivo.
 
 La interfaz tiene estilo de aparato: cuerpo claro, teclas con relieve, pantalla negra y acentos rojos,
 con una tipografia propia (Sampler5 Sans, generada por `Tools/make_font.py`).

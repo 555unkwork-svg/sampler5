@@ -1,37 +1,29 @@
 #pragma once
 
+#include "Look.h"
 #include "PluginProcessor.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
+#include <functional>
 
-/** Estilo "aparato": cuerpo gris claro, teclas con relieve, pantalla negra y acentos naranjas. */
-class HardwareLook final : public juce::LookAndFeel_V4
-{
-public:
-    HardwareLook();
-
-    void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool, bool) override;
-    void drawButtonText (juce::Graphics&, juce::TextButton&, bool, bool) override;
-    juce::Font getTextButtonFont (juce::TextButton&, int) override;
-    void drawToggleButton (juce::Graphics&, juce::ToggleButton&, bool, bool) override;
-
-    void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height, float pos,
-                           float startAngle, float endAngle, juce::Slider&) override;
-    void drawLinearSlider (juce::Graphics&, int x, int y, int width, int height, float sliderPos,
-                           float minSliderPos, float maxSliderPos, juce::Slider::SliderStyle, juce::Slider&) override;
-    juce::Label* createSliderTextBox (juce::Slider&) override;
-
-    void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
-                       int buttonX, int buttonY, int buttonW, int buttonH, juce::ComboBox&) override;
-    void positionComboBoxText (juce::ComboBox&, juce::Label&) override;
-    juce::Font getComboBoxFont (juce::ComboBox&) override;
-    juce::Font getPopupMenuFont() override;
-};
-
+/** La waveform de la pantalla, con tres vistas: FUENTE, CORTES y ANALISIS. */
 class WaveformView final : public juce::Component
 {
 public:
+    enum class Mode { source = 0, slices, analysis };
+
     explicit WaveformView (SamplerProcessor&);
+
+    void setMode (Mode);
+    Mode getMode() const { return mode; }
+
+    /** Zoom: factor > 1 acerca. anchor es la posicion (0..1 del ancho) que queda quieta. */
+    void zoom (double factor, double anchor = 0.5);
+    void scroll (double fractionOfView);
+    void centreOn (juce::int64 sample);
+    juce::Range<double> getVisibleRange() const;
+
+    std::function<void (int pad)> onSliceMenu;
 
     void paint (juce::Graphics&) override;
     void resized() override { peaksFor = nullptr; }
@@ -40,23 +32,60 @@ public:
     void mouseUp (const juce::MouseEvent&) override;
     void mouseMove (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
 private:
+    enum class Drag { none, sliceStart, sliceEnd, regionStart, regionEnd };
+
     void rebuildPeaks();
+    void checkSource();
+    double totalLength() const;
     int markerAt (float x) const;
-    float xForSample (juce::int64 sample) const;
+    bool overSelectedEnd (float x) const;
+    float xForSample (double sample) const;
     juce::int64 sampleForX (float x) const;
+    juce::int64 snapTolerance() const;
+    void paintSlices (juce::Graphics&, bool editable);
+    void paintSource (juce::Graphics&);
+    void paintAnalysis (juce::Graphics&);
 
     SamplerProcessor& proc;
+    Mode mode = Mode::slices;
+    double viewStart = 0.0, viewLength = 0.0;   // viewLength 0: todo el audio
+
+    const eng::AudioData* peaksFor = nullptr;
+    const eng::AudioData* viewFor = nullptr;
+    double peaksStart = -1.0, peaksLength = -1.0;
+    std::vector<std::pair<float, float>> peaks;
+
+    Drag drag = Drag::none;
+    int dragPad = -1;
+};
+
+/** Mini vista del audio entero: muestra que parte se ve en la pantalla y sirve para moverse. */
+class OverviewStrip final : public juce::Component
+{
+public:
+    OverviewStrip (SamplerProcessor&, WaveformView&);
+
+    void paint (juce::Graphics&) override;
+    void resized() override { peaksFor = nullptr; }
+    void mouseDown (const juce::MouseEvent& e) override { mouseDrag (e); }
+    void mouseDrag (const juce::MouseEvent&) override;
+
+private:
+    SamplerProcessor& proc;
+    WaveformView& waveform;
     const eng::AudioData* peaksFor = nullptr;
     std::vector<std::pair<float, float>> peaks;
-    int dragging = -1;
 };
 
 class PadGrid final : public juce::Component
 {
 public:
     explicit PadGrid (SamplerProcessor&);
+
+    std::function<void (int pad)> onSliceMenu;
 
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
@@ -88,6 +117,10 @@ public:
     void fileDragExit (const juce::StringArray&) override { dragOver = false; repaint(); }
     void filesDropped (const juce::StringArray& files, int, int) override;
 
+    enum PanelTab { tabPad = 0, tabGlobal, tabMidi, numTabs };
+    void setPanelTab (int tab);
+    void setViewMode (WaveformView::Mode);
+
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
@@ -102,37 +135,71 @@ private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override { refresh(); }
     void timerCallback() override;
     void refresh();
-    void updatePitchLcd();
+    void updateLive();
     void attachPad (int pad);
-    void setupKnob (Knob&, const juce::String& name, const juce::String& suffix);
+    void showSliceMenu (int pad);
+    void setPadGate (bool gate);
+    void setupKnob (Knob&, const juce::String& name, const juce::String& suffix, int tab);
     void layoutKnob (Knob&, juce::Rectangle<int>);
-    void setupCaption (juce::Label&, const juce::String& text, juce::Justification);
+    void setupCaption (juce::Label&, const juce::String& text, juce::Justification, int tab = -1);
     void setupLcd (juce::Label&);
+    void setupPercentSlider (juce::Slider&);
+    void addToTab (int tab, juce::Component&);
 
     HardwareLook look;
     SamplerProcessor& proc;
     WaveformView waveform;
+    OverviewStrip overview;
     PadGrid padGrid;
 
-    juce::TextButton loadButton { "Cargar" }, halfButton { "/2" }, doubleButton { "x2" },
-                     sliceButton { "Cortar" }, learnButton { "Aprender MIDI" },
-                     detectButton { "Detectar" }, pitchDownButton { "-1" }, pitchUpButton { "+1" }, pitchResetButton { "Original" };
-    juce::Label fileLabel, statusLabel, bpmCaption, bpmLabel, tempoCaption, tempoLabel,
-                padTitle, globalTitle, pitchTitle, pitchCaption, pitchLcd, modeCaption, gridCaption, sensCaption;
-    juce::Slider sensSlider;
-    juce::ComboBox modeBox, gridBox;
-    juce::ToggleButton syncButton { "Sync" }, stretchButton { "Stretch" }, monoButton { "Mono" },
-                       keysButton { "Teclas" }, reverseButton { "Reversa" }, gateButton { "Mantener" };
+    // cabecera
+    juce::TextButton detectButton { "Detectar" }, halfButton { "/2" }, doubleButton { "x2" };
+    juce::Label bpmCaption, bpmLabel, tempoCaption, tempoLabel;
+    juce::ToggleButton syncButton { "Sincro" }, stretchButton { "Estirar" };
 
-    Knob tune, master, vel, root;
+    // fila de vistas y pantalla
+    juce::TextButton sourceTab { "Fuente" }, slicesTab { "Cortes" }, analysisTab { "Analisis" },
+                     resliceButton { "Regenerar" };
+    juce::ToggleButton snapButton { "Autoajuste" };
+    juce::ComboBox snapBox;
+    juce::Label infoLabel, fileLabel, statusLabel;
+
+    // fila de cortes
+    juce::Label modeCaption, gridCaption, sensCaption;
+    juce::ComboBox modeBox, gridBox;
+    juce::Slider sensSlider;
+
+    // panel derecho
+    juce::TextButton panelTabs[numTabs];
+    std::vector<juce::Component*> tabComponents[numTabs];
+
+    juce::Label padTitle, nameLabel, noteLabel, startCaption, endCaption, playCaption;
+    juce::TextButton favButton { "Favorito" }, holdButton { "Mantener" }, shotButton { "Disparo" };
+    juce::ToggleButton reverseButton { "Invertir" };
+    juce::Slider startSlider, endSlider;
     Knob padGain, padPan, padPitch, padAttack, padRelease;
 
-    std::unique_ptr<ButtonAttachment> syncAtt, stretchAtt, monoAtt, keysAtt, reverseAtt, gateAtt;
+    juce::Label globalTitle, pitchTitle, pitchCaption, pitchLcd;
+    juce::ToggleButton monoButton { "Mono" };
+    juce::TextButton pitchDownButton { "-1" }, pitchUpButton { "+1" }, pitchResetButton { "Original" };
+    Knob master, vel, tune;
+
+    juce::Label midiTitle;
+    juce::TextButton learnButton { "Aprender" };
+    juce::ToggleButton keysButton { "Teclas" };
+    Knob root;
+
+    // seccion MUESTRA
+    juce::Label sampleCaption;
+    juce::TextButton loadButton { "Cargar" }, navLeftButton { "<" }, navRightButton { ">" },
+                     zoomOutButton { "-" }, zoomInButton { "+" };
+
+    std::unique_ptr<ButtonAttachment> syncAtt, stretchAtt, monoAtt, keysAtt, reverseAtt;
     std::unique_ptr<juce::FileChooser> chooser;
 
-    juce::Rectangle<int> displayBounds, logoBounds, footerBounds;
+    juce::Rectangle<int> displayBounds, logoBounds, footerBounds, panelBounds, sampleBounds;
     juce::Image crest;
-    int attachedPad = -1;
+    int attachedPad = -1, currentTab = tabPad;
     bool dragOver = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SamplerEditor)

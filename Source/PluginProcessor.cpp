@@ -233,10 +233,16 @@ void SamplerProcessor::finishLoad (LoadResult& result)
             slices = result.restore->slices;
             for (auto& s : slices)
                 s.start = juce::jlimit<juce::int64> (0, source->buffer.getNumSamples() - 1, s.start);
+            regionStart = std::min<juce::int64> (result.restore->regionStart, source->buffer.getNumSamples() - 1);
+            regionEnd = result.restore->regionEnd > regionStart ? result.restore->regionEnd : -1;
         }
         else
         {
             sampleBpm = detectedBpm();
+            // audio nuevo: zona completa y sin cortes viejos (tampoco favoritos)
+            regionStart = 0;
+            regionEnd = -1;
+            slices = {};
         }
     }
 
@@ -251,6 +257,29 @@ void SamplerProcessor::finishLoad (LoadResult& result)
 //==============================================================================
 // Cortes
 
+juce::int64 SamplerProcessor::getRegionEnd() const
+{
+    const juce::int64 length = source != nullptr ? source->buffer.getNumSamples() : 0;
+    return regionEnd < 0 ? length : std::min (regionEnd, length);
+}
+
+void SamplerProcessor::setRegion (juce::int64 start, juce::int64 end)
+{
+    if (source == nullptr)
+        return;
+    const juce::int64 length = source->buffer.getNumSamples();
+    const auto minLength = (juce::int64) (source->sampleRate * 0.05);
+    start = juce::jlimit<juce::int64> (0, std::max<juce::int64> (0, length - minLength), start);
+    end = juce::jlimit<juce::int64> (start + minLength, length, end);
+    {
+        const juce::ScopedLock lock (modelLock);
+        regionStart = start;
+        regionEnd = end >= length ? -1 : end;
+    }
+    rebuildPlayable();
+    sendChangeMessage();
+}
+
 void SamplerProcessor::autoSlice (eng::SliceMode mode, int gridIndexToUse)
 {
     sliceMode = mode;
@@ -258,16 +287,47 @@ void SamplerProcessor::autoSlice (eng::SliceMode mode, int gridIndexToUse)
     if (source == nullptr)
         return;
 
-    const auto points = eng::makeSlices (mode, analysis, source->buffer.getNumSamples(), source->sampleRate,
-                                         sampleBpm, gridBeatsForIndex (gridIndex),
-                                         juce::Time::currentTimeMillis(), sensitivity);
+    // se corta solo dentro de la zona elegida en FUENTE
+    const auto from = regionStart, to = getRegionEnd();
+    eng::Analysis local;
+    local.bpm = analysis.bpm;
+    for (const auto& o : analysis.onsets)
+        if (o.position >= from && o.position < to)
+            local.onsets.push_back ({ o.position - from, o.strength });
+
+    auto points = eng::makeSlices (mode, local, to - from, source->sampleRate,
+                                   sampleBpm, gridBeatsForIndex (gridIndex),
+                                   juce::Time::currentTimeMillis(), sensitivity);
+    for (auto& p : points)
+        p += from;
+
     {
         const juce::ScopedLock lock (modelLock);
-        for (int i = 0; i < eng::kNumPads; ++i)
+
+        // los favoritos se quedan como estan; los cortes nuevos que caen encima de uno se descartan
+        const auto tooClose = (juce::int64) (source->sampleRate * 0.01);
+        std::vector<juce::int64> fresh;
+        for (auto p : points)
         {
-            auto& s = slices[(size_t) i];
-            s.used = i < (int) points.size();
-            s.start = s.used ? points[(size_t) i] : 0;
+            bool taken = false;
+            for (const auto& s : slices)
+                if (s.used && s.favorite && std::abs (s.start - p) < tooClose)
+                    taken = true;
+            if (! taken)
+                fresh.push_back (p);
+        }
+
+        size_t next = 0;
+        for (auto& s : slices)
+        {
+            if (s.used && s.favorite)
+                continue;
+            s = Slice {};
+            if (next < fresh.size())
+            {
+                s.used = true;
+                s.start = fresh[next++];
+            }
         }
     }
     rebuildPlayable();
@@ -323,10 +383,132 @@ void SamplerProcessor::removeSlice (int pad)
         return;
     {
         const juce::ScopedLock lock (modelLock);
-        slices[(size_t) pad].used = false;
+        slices[(size_t) pad] = Slice {};
     }
     rebuildPlayable();
     sendChangeMessage();
+}
+
+juce::int64 SamplerProcessor::getSliceEnd (int pad) const
+{
+    if (source == nullptr || pad < 0 || pad >= eng::kNumPads)
+        return 0;
+    const auto& s = slices[(size_t) pad];
+    if (s.end > s.start)
+        return std::min<juce::int64> (s.end, source->buffer.getNumSamples());
+
+    // automatico: donde empieza el corte siguiente, o el final de la zona
+    juce::int64 end = std::max (getRegionEnd(), s.start + 1);
+    if (s.start >= getRegionEnd())
+        end = source->buffer.getNumSamples();
+    for (const auto& other : slices)
+        if (other.used && other.start > s.start)
+            end = std::min (end, other.start);
+    return end;
+}
+
+void SamplerProcessor::setSliceEnd (int pad, juce::int64 position)
+{
+    if (source == nullptr || pad < 0 || pad >= eng::kNumPads || ! slices[(size_t) pad].used)
+        return;
+    {
+        const juce::ScopedLock lock (modelLock);
+        auto& s = slices[(size_t) pad];
+        const auto minLength = (juce::int64) (source->sampleRate * 0.005);
+        s.end = position < 0 ? -1
+                             : juce::jlimit<juce::int64> (s.start + minLength, source->buffer.getNumSamples(), position);
+    }
+    rebuildPlayable();
+    sendChangeMessage();
+}
+
+void SamplerProcessor::setSliceName (int pad, const juce::String& name)
+{
+    if (pad < 0 || pad >= eng::kNumPads)
+        return;
+    {
+        const juce::ScopedLock lock (modelLock);
+        slices[(size_t) pad].name = name.trim().substring (0, 24);
+    }
+    sendChangeMessage();
+}
+
+juce::String SamplerProcessor::getSliceName (int pad) const
+{
+    if (pad < 0 || pad >= eng::kNumPads)
+        return {};
+    const auto& name = slices[(size_t) pad].name;
+    return name.isNotEmpty() ? name : "CHOP " + juce::String (pad + 1);
+}
+
+void SamplerProcessor::setSliceFavorite (int pad, bool favorite)
+{
+    if (pad < 0 || pad >= eng::kNumPads || ! slices[(size_t) pad].used)
+        return;
+    {
+        const juce::ScopedLock lock (modelLock);
+        slices[(size_t) pad].favorite = favorite;
+    }
+    sendChangeMessage();
+}
+
+void SamplerProcessor::setSnap (bool enabled, SnapMode mode)
+{
+    snapEnabled = enabled;
+    snapMode = mode;
+    sendChangeMessage();
+}
+
+juce::int64 SamplerProcessor::snapPosition (juce::int64 position, juce::int64 tolerance) const
+{
+    if (source == nullptr || ! snapEnabled)
+        return position;
+
+    auto nearestOnset = [&] () -> juce::int64
+    {
+        juce::int64 best = -1;
+        for (const auto& o : analysis.onsets)
+            if (best < 0 || std::abs (o.position - position) < std::abs (best - position))
+                best = o.position;
+        return best >= 0 && std::abs (best - position) <= tolerance ? best : -1;
+    };
+
+    auto nearestZeroCrossing = [&] () -> juce::int64
+    {
+        const auto& buffer = source->buffer;
+        const float* data = buffer.getReadPointer (0);
+        const juce::int64 n = buffer.getNumSamples();
+        const auto range = std::min (tolerance, (juce::int64) (source->sampleRate * 0.01));
+        for (juce::int64 d = 0; d <= range; ++d)
+            for (juce::int64 i : { position - d, position + d })
+                if (i > 0 && i < n && (data[i - 1] <= 0.0f) != (data[i] <= 0.0f))
+                    return i;
+        return -1;
+    };
+
+    auto nearestGridLine = [&] () -> juce::int64
+    {
+        if (sampleBpm <= 0.0)
+            return -1;
+        const double step = source->sampleRate * 60.0 / sampleBpm * gridBeatsForIndex (gridIndex);
+        const double origin = analysis.onsets.empty() ? (double) regionStart : (double) analysis.onsets.front().position;
+        const auto line = (juce::int64) std::llround (origin + std::round (((double) position - origin) / step) * step);
+        return std::abs (line - position) <= tolerance ? line : -1;
+    };
+
+    juce::int64 snapped = -1;
+    switch (snapMode)
+    {
+        case SnapMode::onset:        snapped = nearestOnset(); break;
+        case SnapMode::zeroCrossing: snapped = nearestZeroCrossing(); break;
+        case SnapMode::grid:         snapped = nearestGridLine(); break;
+        case SnapMode::automatic:
+            snapped = nearestOnset();
+            if (snapped < 0)
+                snapped = nearestZeroCrossing();
+            break;
+    }
+    return snapped >= 0 ? snapped : position;
 }
 
 void SamplerProcessor::setSelectedPad (int pad)
@@ -417,12 +599,7 @@ void SamplerProcessor::rebuildPlayable()
         p->used[(size_t) i] = s.used;
         p->start[(size_t) i] = s.start;
 
-        // cada corte termina donde empieza el siguiente
-        juce::int64 end = p->sourceLength;
-        for (const auto& other : slices)
-            if (other.used && other.start > s.start)
-                end = std::min (end, other.start);
-        p->end[(size_t) i] = end;
+        p->end[(size_t) i] = getSliceEnd (i);
     }
 
     engine.setPlayable (std::move (p));
@@ -564,6 +741,10 @@ void SamplerProcessor::getStateInformation (juce::MemoryBlock& destData)
         root.setAttribute ("grid", gridIndex);
         root.setAttribute ("sens", sensitivity);
         root.setAttribute ("manualBpm", manualBpm);
+        root.setAttribute ("regionStart", juce::String (regionStart));
+        root.setAttribute ("regionEnd", juce::String (regionEnd));
+        root.setAttribute ("snap", snapEnabled);
+        root.setAttribute ("snapMode", (int) snapMode);
         root.setAttribute ("selectedPad", selectedPad.load());
 
         auto* pads = root.createNewChildElement ("Pads");
@@ -572,6 +753,9 @@ void SamplerProcessor::getStateInformation (juce::MemoryBlock& destData)
             auto* pad = pads->createNewChildElement ("Pad");
             pad->setAttribute ("used", slices[(size_t) i].used);
             pad->setAttribute ("start", juce::String (slices[(size_t) i].start));
+            pad->setAttribute ("end", juce::String (slices[(size_t) i].end));
+            pad->setAttribute ("name", slices[(size_t) i].name);
+            pad->setAttribute ("fav", slices[(size_t) i].favorite);
             pad->setAttribute ("note", engine.padNote[(size_t) i].load());
         }
     }
@@ -593,6 +777,10 @@ void SamplerProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (path.isNotEmpty() && juce::File::isAbsolutePath (path))
         info.file = juce::File (path);
     info.bpm = root->getDoubleAttribute ("bpm", 120.0);
+    info.regionStart = std::max<juce::int64> (0, root->getStringAttribute ("regionStart", "0").getLargeIntValue());
+    info.regionEnd = root->getStringAttribute ("regionEnd", "-1").getLargeIntValue();
+    snapEnabled = root->getBoolAttribute ("snap", true);
+    snapMode = (SnapMode) juce::jlimit (0, 3, root->getIntAttribute ("snapMode", 0));
 
     {
         const juce::ScopedLock lock (modelLock);
@@ -612,6 +800,9 @@ void SamplerProcessor::setStateInformation (const void* data, int sizeInBytes)
                 break;
             info.slices[(size_t) i].used = pad->getBoolAttribute ("used", false);
             info.slices[(size_t) i].start = pad->getStringAttribute ("start", "0").getLargeIntValue();
+            info.slices[(size_t) i].end = pad->getStringAttribute ("end", "-1").getLargeIntValue();
+            info.slices[(size_t) i].name = pad->getStringAttribute ("name").substring (0, 24);
+            info.slices[(size_t) i].favorite = pad->getBoolAttribute ("fav", false);
             engine.padNote[(size_t) i].store (juce::jlimit (-1, 127, pad->getIntAttribute ("note", eng::SamplerEngine::kDefaultFirstNote + i)));
             ++i;
         }

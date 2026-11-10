@@ -15,13 +15,18 @@ class SamplerProcessor final : public juce::AudioProcessor,
                                private juce::Timer
 {
 public:
-    static constexpr double kMaxSeconds = 300.0;   // largo maximo del audio que se carga
+    static constexpr double kMaxSeconds = 120.0;   // largo maximo del audio que se carga
 
     struct Slice
     {
         bool used = false;
         juce::int64 start = 0;
+        juce::int64 end = -1;      // -1: termina donde empieza el corte siguiente
+        juce::String name;         // vacio: "CHOP n"
+        bool favorite = false;     // los favoritos no se pierden al regenerar
     };
+
+    enum class SnapMode { automatic = 0, onset, zeroCrossing, grid };
 
     SamplerProcessor();
     ~SamplerProcessor() override;
@@ -78,6 +83,24 @@ public:
     void setSliceStart (int pad, juce::int64 position);
     int addSlice (juce::int64 position);   // devuelve el pad usado, o -1 si no queda ninguno libre
     void removeSlice (int pad);
+    void setSliceEnd (int pad, juce::int64 position);   // negativo: vuelve a automatico
+    juce::int64 getSliceEnd (int pad) const;            // fin real del corte (propio o automatico)
+    void setSliceName (int pad, const juce::String& name);
+    juce::String getSliceName (int pad) const;
+    void setSliceFavorite (int pad, bool favorite);
+
+    /** Zona del audio que se usa para cortar (pestana FUENTE). */
+    juce::int64 getRegionStart() const { return regionStart; }
+    juce::int64 getRegionEnd() const;
+    void setRegion (juce::int64 start, juce::int64 end);
+
+    /** Iman al mover cortes: lleva `position` al punto mas cercano si esta dentro de `tolerance` muestras. */
+    bool isSnapEnabled() const { return snapEnabled; }
+    SnapMode getSnapMode() const { return snapMode; }
+    void setSnap (bool enabled, SnapMode mode);
+    juce::int64 snapPosition (juce::int64 position, juce::int64 tolerance) const;
+
+    const eng::Analysis& getAnalysis() const { return analysis; }
 
     int getSelectedPad() const { return selectedPad.load(); }
     void setSelectedPad (int pad);
@@ -101,6 +124,7 @@ private:
         juce::File file;
         double bpm = 0.0;
         std::array<Slice, eng::kNumPads> slices {};
+        juce::int64 regionStart = 0, regionEnd = -1;
     };
 
     struct LoadResult
@@ -146,6 +170,9 @@ private:
     int gridIndex = 2;
     double sensitivity = 0.5;
     double manualBpm = 120.0;
+    juce::int64 regionStart = 0, regionEnd = -1;   // -1: hasta el final
+    bool snapEnabled = true;
+    SnapMode snapMode = SnapMode::automatic;
     std::atomic<int> selectedPad { 0 };
     juce::String errorText;
 

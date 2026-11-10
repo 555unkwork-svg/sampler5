@@ -2,6 +2,7 @@
 // carga un audio, toca pads, prueba sync/stretch, guardado de estado y dibuja la interfaz.
 
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <cmath>
@@ -156,6 +157,58 @@ static void runTests (const juce::String& screenshotPath)
     std::printf ("  pad 1 con sync a 150 BPM (sin stretch): %d muestras\n", resampled);
     CHECK (resampled > 17640 - 400 && resampled <= 17640 + 2, "duracion con sync sin stretch: %d", resampled);
 
+    std::printf ("Cortes: fin, nombres, favoritos, zona e iman\n");
+    onMessageThread ([&]
+    {
+        proc->apvts.getParameter ("sync")->setValueNotifyingHost (0.0f);
+        proc->autoSlice (eng::SliceMode::grid, 2);
+        const auto start0 = proc->getSlices()[0].start;
+        CHECK (proc->getSliceEnd (0) == proc->getSlices()[1].start, "fin automatico = inicio del siguiente");
+        proc->setSliceEnd (0, start0 + 4410);
+        CHECK (proc->getSliceEnd (0) == start0 + 4410, "fin propio");
+    });
+    juce::Thread::sleep (150);
+    const int shortened = playAndMeasure (*proc, 60, 40);
+    std::printf ("  pad 1 con FINAL a 100 ms: suena %d muestras\n", shortened);
+    CHECK (shortened > 4000 && shortened <= 4410, "el fin propio no se respeta: %d", shortened);
+    onMessageThread ([&]
+    {
+        proc->setSliceEnd (0, -1);
+        proc->setSliceName (2, "  Bombo  ");
+        proc->setSliceFavorite (2, true);
+        const auto favStart = proc->getSlices()[2].start;
+        proc->autoSlice (eng::SliceMode::equal, 2);
+        CHECK (proc->getSliceName (2) == "Bombo" && proc->getSlices()[2].favorite && proc->getSlices()[2].start == favStart,
+               "el favorito no sobrevivio al regenerar");
+        CHECK (proc->getSliceName (1) == "CHOP 2", "nombre por defecto: %s", proc->getSliceName (1).toRawUTF8());
+        proc->setSliceFavorite (2, false);
+
+        // zona de fuente: solo se corta adentro
+        const auto len = (juce::int64) proc->getSource()->buffer.getNumSamples();
+        proc->setRegion (len / 4, len / 2);
+        proc->autoSlice (eng::SliceMode::equal, 2);
+        bool inside = true;
+        for (int i = 0; i < eng::kNumPads; ++i)
+            if (proc->getSlices()[(size_t) i].used
+                && (proc->getSlices()[(size_t) i].start < len / 4 || proc->getSliceEnd (i) > len / 2))
+                inside = false;
+        CHECK (inside, "hay cortes fuera de la zona de fuente");
+        proc->setRegion (0, len);
+
+        // iman: cerca de un golpe se pega; lejos, al cruce por cero o no se mueve
+        const auto onset = proc->getAnalysis().onsets[2].position;
+        proc->setSnap (true, SamplerProcessor::SnapMode::onset);
+        CHECK (proc->snapPosition (onset + 300, 500) == onset, "el iman no llevo al golpe");
+        CHECK (proc->snapPosition (onset + 3000, 500) == onset + 3000, "el iman actuo demasiado lejos");
+        proc->setSnap (false, SamplerProcessor::SnapMode::onset);
+        CHECK (proc->snapPosition (onset + 300, 500) == onset + 300, "iman apagado no debe mover");
+        proc->setSnap (true, SamplerProcessor::SnapMode::automatic);
+        proc->setSliceName (5, "Caja");
+        proc->setSliceFavorite (5, true);
+        proc->setSliceEnd (5, proc->getSlices()[5].start + 2000);
+        proc->apvts.getParameter ("sync")->setValueNotifyingHost (1.0f);
+    });
+
     std::printf ("Estado guardado\n");
     juce::MemoryBlock state;
     std::array<SamplerProcessor::Slice, eng::kNumPads> before {};
@@ -187,6 +240,9 @@ static void runTests (const juce::String& screenshotPath)
                      second->getSampleBpm(), same ? "si" : "no", second->engine.padNote[3].load(),
                      (double) second->apvts.getRawParameterValue ("sync")->load());
         CHECK (same, "los cortes no se restauraron");
+        CHECK (second->getSliceName (5) == "Caja" && second->getSlices()[5].favorite
+                   && second->getSliceEnd (5) == second->getSlices()[5].start + 2000,
+               "nombre, favorito o fin del corte no se restauraron");
         CHECK (std::abs (second->getSampleBpm() - 121.5) < 0.001, "el BPM no se restauro");
         CHECK (second->engine.padNote[3].load() == 100, "la nota aprendida no se restauro");
         CHECK (second->getSource() != nullptr, "el audio no se volvio a cargar");
@@ -242,6 +298,20 @@ static void runTests (const juce::String& screenshotPath)
                 juce::PNGImageFormat png;
                 png.writeImageToStream (image, *stream);
                 std::printf ("  captura guardada: %dx%d\n", image.getWidth(), image.getHeight());
+            }
+
+            // las otras vistas y pestanas, para revisarlas a ojo
+            if (auto* ed = dynamic_cast<SamplerEditor*> (editor.get()))
+            {
+                auto shot = [&] (const char* suffix)
+                {
+                    juce::File f (screenshotPath.upToLastOccurrenceOf (".", false, false) + suffix + ".png");
+                    f.deleteFile();
+                    if (auto stream = f.createOutputStream())
+                        juce::PNGImageFormat().writeImageToStream (ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f), *stream);
+                };
+                ed->setViewMode (WaveformView::Mode::source);   ed->setPanelTab (SamplerEditor::tabGlobal); shot ("-fuente-global");
+                ed->setViewMode (WaveformView::Mode::analysis); ed->setPanelTab (SamplerEditor::tabMidi);   shot ("-analisis-midi");
             }
         }
     });
