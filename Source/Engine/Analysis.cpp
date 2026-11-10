@@ -279,6 +279,74 @@ double estimateBpm (const std::vector<float>& flux, double sampleRate)
 
     return bpm;
 }
+/** Tonalidad: se suma la energia de cada nota (Do, Do#...) y se compara con los perfiles
+    clasicos de escala mayor y menor (Krumhansl). */
+void estimateKey (const std::vector<float>& mono, double sampleRate, int& root, bool& minor)
+{
+    root = -1;
+    minor = false;
+    const int order = 13, size = 1 << order, hop = size / 2;
+    if ((int) mono.size() < size)
+        return;
+
+    juce::dsp::FFT fft (order);
+    juce::dsp::WindowingFunction<float> window ((size_t) size, juce::dsp::WindowingFunction<float>::hann, false);
+    std::vector<float> work ((size_t) size * 2);
+    double chroma[12] = {};
+
+    for (int start = 0; start + size <= (int) mono.size(); start += hop)
+    {
+        std::copy (mono.begin() + start, mono.begin() + start + size, work.begin());
+        std::fill (work.begin() + size, work.end(), 0.0f);
+        window.multiplyWithWindowingTable (work.data(), (size_t) size);
+        fft.performFrequencyOnlyForwardTransform (work.data(), true);
+
+        for (int b = 1; b < size / 2; ++b)
+        {
+            const double freq = b * sampleRate / size;
+            if (freq < 60.0 || freq > 2000.0)
+                continue;
+            const double midi = 69.0 + 12.0 * std::log2 (freq / 440.0);
+            const int nearest = (int) std::lround (midi);
+            if (std::abs (midi - nearest) > 0.35)
+                continue;   // entre dos notas: no suma
+            chroma[((nearest % 12) + 12) % 12] += (double) work[(size_t) b] * work[(size_t) b];
+        }
+    }
+
+    double total = 0.0;
+    for (double& c : chroma) { c = std::sqrt (c); total += c; }
+    if (total <= 1.0e-9)
+        return;
+
+    static const double major[12] = { 6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88 };
+    static const double minorP[12] = { 6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17 };
+
+    auto correlate = [&] (const double* profile, int shift)
+    {
+        double meanC = 0.0, meanP = 0.0;
+        for (int i = 0; i < 12; ++i) { meanC += chroma[i]; meanP += profile[i]; }
+        meanC /= 12.0; meanP /= 12.0;
+        double num = 0.0, dc = 0.0, dp = 0.0;
+        for (int i = 0; i < 12; ++i)
+        {
+            const double c = chroma[(i + shift) % 12] - meanC, p = profile[i] - meanP;
+            num += c * p; dc += c * c; dp += p * p;
+        }
+        return dc > 0.0 && dp > 0.0 ? num / std::sqrt (dc * dp) : 0.0;
+    };
+
+    double best = -2.0;
+    for (int shift = 0; shift < 12; ++shift)
+        for (int mode = 0; mode < 2; ++mode)
+        {
+            const double score = correlate (mode == 0 ? major : minorP, shift);
+            if (score > best) { best = score; root = shift; minor = mode == 1; }
+        }
+
+    if (best < 0.35)   // muy poco claro (percusion sola, ruido)
+        root = -1;
+}
 } // namespace
 
 Analysis analyse (const juce::AudioBuffer<float>& audio, double sampleRate)
@@ -347,6 +415,7 @@ Analysis analyse (const juce::AudioBuffer<float>& audio, double sampleRate)
         for (auto& o : result.onsets) o.strength /= strongest;
 
     result.bpm = fitBpmToLoopLength (estimateBpm (flux, sampleRate), audio.getNumSamples() / sampleRate);
+    estimateKey (mono, sampleRate, result.keyRoot, result.keyMinor);
     return result;
 }
 
@@ -466,5 +535,45 @@ double bpmFromFileName (const juce::String& name)
                 return (double) v;
         }
     return 0.0;
+}
+
+juce::String keyName (int root, bool minor)
+{
+    static const char* names[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    if (root < 0)
+        return "--";
+    return juce::String (names[((root % 12) + 12) % 12]) + (minor ? "m" : "");
+}
+
+bool keyFromFileName (const juce::String& name, int& root, bool& minor)
+{
+    juce::StringArray tokens;
+    tokens.addTokens (name, " _-.()[]", "");
+    for (const auto& t : tokens)
+    {
+        if (t.length() < 2 || t.length() > 6)
+            continue;
+        const auto letter = t[0];
+        if (letter < 'A' || letter > 'G')
+            continue;
+        static const int base[7] = { 9, 11, 0, 2, 4, 5, 7 };   // A B C D E F G
+        int value = base[letter - 'A'];
+        auto rest = t.substring (1);
+        bool accidental = false;
+        if (rest.startsWithChar ('#')) { ++value; rest = rest.substring (1); accidental = true; }
+        else if (rest.startsWithChar ('b') && rest != "b") { --value; rest = rest.substring (1); accidental = true; }
+        else if (rest == "b") { --value; rest = {}; accidental = true; }
+
+        const auto mode = rest.toLowerCase();
+        const bool isMinor = mode == "m" || mode == "min" || mode == "minor";
+        const bool isMajor = mode == "maj" || mode == "major" || (mode.isEmpty() && accidental);
+        if (! isMinor && ! isMajor)
+            continue;
+
+        root = (value + 12) % 12;
+        minor = isMinor;
+        return true;
+    }
+    return false;
 }
 }

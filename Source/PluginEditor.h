@@ -139,6 +139,9 @@ private:
     void updateLive();
     void attachPad (int pad);
     void showSliceMenu (int pad);
+    void refreshPresets();
+    void refreshKeyBox();
+    void askPresetName();
     void setPadGate (bool gate);
     void setupKnob (Knob&, const juce::String& name, const juce::String& suffix, int tab);
     void layoutKnob (Knob&, juce::Rectangle<int>);
@@ -185,18 +188,24 @@ private:
     Knob padCutoff, padReso;
 
     juce::Label globalTitle, pitchTitle, pitchCaption, pitchLcd;
-    juce::Label polyCaption, voicesCaption;
-    juce::ComboBox polyBox, voicesBox;
+    juce::Label polyCaption, voicesCaption, keyCaption;
+    juce::ComboBox polyBox, voicesBox, keyBox;
     juce::TextButton pitchDownButton { "-1" }, pitchUpButton { "+1" }, pitchResetButton { "Original" };
     Knob master, globalPan, tune;
 
-    juce::Label advancedTitle, chokeCaption;
-    juce::ComboBox chokeBox;
+    juce::Label advancedTitle, chokeCaption, channelCaption;
+    juce::ComboBox chokeBox, channelBox;
     Knob humanize, vel, swing;
 
-    juce::Label midiTitle;
+    juce::Label midiTitle, rangeCaption, rangeDash, aftertouchCaption;
     juce::TextButton learnButton { "Aprender" };
-    juce::ToggleButton keysButton { "Teclas" };
+    juce::ToggleButton keysButton { "Teclas" }, midiInButton { "Entrada MIDI" };
+    juce::ComboBox rangeLoBox, rangeHiBox, aftertouchBox;
+
+    // presets
+    juce::Label presetCaption;
+    juce::ComboBox presetBox;
+    juce::TextButton presetSaveButton { "Guardar" }, presetFolderButton { "Carpeta" };
     Knob root;
 
     // seccion MUESTRA
@@ -206,12 +215,16 @@ private:
     juce::ToggleButton invButton { "Inv" };
 
     std::unique_ptr<ButtonAttachment> syncAtt, stretchAtt, keysAtt, reverseAtt, loopAtt, muteAtt, invAtt;
-    std::unique_ptr<ComboAttachment> polyAtt, voicesAtt, chokeAtt, filterAtt;
+    std::unique_ptr<ComboAttachment> polyAtt, voicesAtt, chokeAtt, filterAtt, channelAtt, rangeLoAtt, rangeHiAtt, aftertouchAtt;
+    std::unique_ptr<ButtonAttachment> midiInAtt;
     std::unique_ptr<juce::FileChooser> chooser;
 
     juce::Rectangle<int> displayBounds, logoBounds, footerBounds, panelBounds, sampleBounds;
     juce::Image crest;
     int attachedPad = -1, currentTab = tabPad;
+    int shownKeyRoot = -2;
+    bool shownKeyMinor = false;
+    juce::String shownPreset;
     bool dragOver = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SamplerEditor)

@@ -233,9 +233,23 @@ void SamplerEngine::addEvent (const Event& e, int numSamples)
 
 void SamplerEngine::queueMidi (const juce::MidiMessage& m, int time, int numSamples)
 {
+    if (globals.midiChannel > 0 && m.getChannel() != globals.midiChannel)
+        return;
+
+    if (m.isChannelPressure() || m.isAftertouch())
+    {
+        const float pressure = (float) (m.isAftertouch() ? m.getAfterTouchValue() : m.getChannelPressureValue()) / 127.0f;
+        for (auto& v : voices)
+            if (v.active && (m.isChannelPressure() || v.noteId == m.getNoteNumber()))
+                v.pressure = pressure;
+        return;
+    }
+
     if (m.isNoteOn())
     {
         const int note = m.getNoteNumber();
+        if (! globals.midiIn || note < globals.rangeLo || note > globals.rangeHi)
+            return;
 
         const int learning = learnPad.load();
         if (learning >= 0 && learning < kNumPads)
@@ -317,7 +331,8 @@ void SamplerEngine::renderVoices (juce::AudioBuffer<float>& out, int startSample
 
         // paneo de potencia constante
         const float gain = juce::Decibels::decibelsToGain (settings.gainDb, -60.0f)
-                         * juce::Decibels::decibelsToGain (settings.preGainDb) * v.velGain;
+                         * juce::Decibels::decibelsToGain (settings.preGainDb) * v.velGain
+                         * (globals.aftertouchVolume ? 1.0f + v.pressure : 1.0f);   // hasta +6 dB apretando
         const float angle = (juce::jlimit (-1.0f, 1.0f, settings.pan) + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
         const float targetL = gain * std::cos (angle) * juce::MathConstants<float>::sqrt2;
         const float targetR = gain * std::sin (angle) * juce::MathConstants<float>::sqrt2;

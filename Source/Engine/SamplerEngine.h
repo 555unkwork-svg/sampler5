@@ -63,6 +63,10 @@ struct GlobalSettings
     bool chokeAll = false;     // cada pad corta a los demas
     bool invertAll = false;    // INV: el audio entero al reves
     int maxVoices = 16;
+    bool midiIn = true;        // ENTRADA MIDI
+    int midiChannel = 0;       // 0 = todos
+    int rangeLo = 0, rangeHi = 127;
+    bool aftertouchVolume = false;
     bool keysMode = false;     // el pad elegido se toca cromatico
     int keysRoot = 60;
     int selectedPad = 0;
@@ -120,6 +124,7 @@ private:
         enum class Stage { attack, sustain, release } stage = Stage::attack;
         float env = 0.0f, envStep = 0.0f;
         float ic1[2] {}, ic2[2] {};   // estado del filtro
+        float pressure = 0.0f;        // aftertouch 0..1
     };
 
     struct Event

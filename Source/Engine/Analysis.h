@@ -17,6 +17,8 @@ struct Analysis
 {
     std::vector<Onset> onsets;  // ordenados por tiempo
     double bpm = 0.0;           // 0 = no se pudo estimar
+    int keyRoot = -1;           // 0 = Do ... 11 = Si; -1 = no se pudo estimar
+    bool keyMinor = false;
 };
 
 /** Detecta golpes (transientes) y estima el tempo. Pensado para correr fuera del hilo de audio. */
@@ -33,4 +35,10 @@ std::vector<juce::int64> makeSlices (SliceMode mode, const Analysis& analysis,
 
 /** Busca un tempo escrito en el nombre del archivo (ej. "loop_130_Am.wav"). 0 si no hay. */
 double bpmFromFileName (const juce::String& nameWithoutExtension);
+
+/** Busca una tonalidad escrita en el nombre del archivo (ej. "loop_130_A#m.wav"). */
+bool keyFromFileName (const juce::String& nameWithoutExtension, int& root, bool& minor);
+
+/** "A#m", "C"... */
+juce::String keyName (int root, bool minor);
 }

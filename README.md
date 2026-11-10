@@ -3,7 +3,7 @@
 Plugin VST3 para Windows: un audio, cortado en hasta 16 pads.
 Hecho con [JUCE 9](https://juce.com) y [Signalsmith Stretch](https://signalsmith-audio.co.uk/code/stretch/).
 
-## Que hace (v1.2)
+## Que hace (v1.3)
 
 - Carga WAV, AIFF, FLAC, MP3 u OGG (boton **CARGAR** o arrastrando el archivo). Hasta 2 minutos.
 - Detecta golpes y estima el BPM (usa tambien el largo del loop y el tempo del nombre del archivo).
@@ -21,13 +21,18 @@ Hecho con [JUCE 9](https://juce.com) y [Signalsmith Stretch](https://signalsmith
   LIBERACION, INICIO, FINAL, INVERTIR, LOOP (repite mientras se mantiene la nota), SILENCIAR y
   REPRODUCCION (MANTENER / DISPARO).
 - Pestana **FILTRO**: filtro del pad elegido (pasa bajos / pasa altos), CORTE y RESONANCIA.
-- Pestana **GLOBAL**: MASTER, PAN, POLI / MONO, VOCES y pitch global por semitonos.
+- Pestana **GLOBAL**: MASTER, PAN, POLI / MONO, VOCES y pitch global por semitonos. **LLEVAR A TONALIDAD**
+  elige la tonalidad destino y el plugin calcula los semitonos.
 - Pestana **AVANZADO**: HUMANIZAR (variacion leve de volumen y tiempo), VEL (respuesta general al golpe),
-  SWING (retrasa las notas en contratiempo; necesita el proyecto en reproduccion) y CHOKE (cada pad corta a los demas).
-- Pestana **MIDI**: TECLAS (el pad elegido se toca cromatico), NOTA BASE y APRENDER.
+  SWING (retrasa las notas en contratiempo; necesita el proyecto en reproduccion), CHOKE (cada pad corta a los demas)
+  y CANAL MIDI.
+- Pestana **MIDI**: TECLAS (el pad elegido se toca cromatico), NOTA BASE, APRENDER, ENTRADA MIDI, RANGO MIDI
+  y AFTERTOUCH (a volumen).
 - **MUESTRA**: CARGAR, INV (el audio entero al reves) y SILENCIO (corta todo lo que suena).
+- **TONAL**: detecta la tonalidad del audio (o la toma del nombre del archivo, ej. `_A#m`).
+- **PRESET**: kits con la ruta al audio, en `Documentos/sampler5/Presets` (GUARDAR, CARPETA, y Predeterminado para vaciar).
 - **SINCRO** sigue el tempo del proyecto (o el campo TEMPO si el host no lo informa); **ESTIRAR** lo hace sin cambiar el tono.
-- El proyecto guarda cortes, nombres, favoritos, notas y parametros. El audio se guarda como ruta al archivo.
+- El proyecto del DAW guarda todo, incluido el audio (comprimido sin perdida), asi no se pierde si se mueve el archivo.
 
 La interfaz tiene estilo de aparato: cuerpo claro, teclas con relieve, pantalla negra y acentos rojos,
 con una tipografia propia (Sampler5 Sans, generada por `Tools/make_font.py`).

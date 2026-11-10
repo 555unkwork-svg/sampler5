@@ -592,8 +592,9 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
 
     for (auto* b : { &detectButton, &halfButton, &doubleButton, &sourceTab, &slicesTab, &analysisTab,
                      &resliceButton, &loadButton, &navLeftButton, &navRightButton, &zoomOutButton, &zoomInButton,
-                     &silenceButton })
+                     &silenceButton, &presetSaveButton, &presetFolderButton })
         addAndMakeVisible (*b);
+    addAndMakeVisible (presetBox);
     for (auto* b : { &syncButton, &stretchButton, &snapButton, &invButton })
         addAndMakeVisible (*b);
     for (auto* c : { &modeBox, &gridBox, &snapBox })
@@ -694,6 +695,29 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     zoomOutButton.onClick = [this] { waveform.zoom (0.5); };
     zoomInButton.onClick = [this] { waveform.zoom (2.0); };
 
+    //---- presets
+    setupCaption (presetCaption, "PRESET", juce::Justification::centredLeft);
+    presetCaption.setFont (sans (13.0f));
+    presetCaption.setColour (juce::Label::textColourId, kInk);
+    presetBox.onChange = [this]
+    {
+        const int id = presetBox.getSelectedId();
+        if (id == 1)
+            proc.loadDefaultPreset();
+        else if (id > 1)
+            proc.loadPreset (presetBox.getText());
+    };
+    presetSaveButton.onClick = [this] { askPresetName(); };
+    presetFolderButton.setColour (juce::TextButton::buttonColourId, kInkDim);
+    presetFolderButton.onClick = [this]
+    {
+        const auto folder = SamplerProcessor::getPresetFolder();
+        folder.createDirectory();
+        folder.revealToUser();
+        refreshPresets();
+    };
+    refreshPresets();
+
     //---- panel derecho: pestanas
     const char* tabNames[numTabs] = { "Pad", "Filtro", "Global", "Avanzado", "MIDI" };
     for (int i = 0; i < numTabs; ++i)
@@ -792,6 +816,16 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     addToTab (tabGlobal, polyBox);
     addToTab (tabGlobal, voicesBox);
     polyBox.addItemList ({ "Poli", "Mono" }, 1);
+    setupCaption (keyCaption, "LLEVAR A TONALIDAD", juce::Justification::centredLeft, tabGlobal);
+    addToTab (tabGlobal, keyBox);
+    keyBox.setTextWhenNothingSelected ("--");
+    keyBox.setTextWhenNoChoicesAvailable ("Sin tonalidad detectada");
+    keyBox.onChange = [this]
+    {
+        const int id = keyBox.getSelectedId();
+        if (id >= 1)
+            proc.setTargetKey (id == 1 ? -1 : id - 2);
+    };
     for (int v = 1; v <= 16; ++v)
         voicesBox.addItem (juce::String (v), v);
 
@@ -805,6 +839,11 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     setupCaption (chokeCaption, "CHOKE", juce::Justification::centredLeft, tabAdvanced);
     addToTab (tabAdvanced, chokeBox);
     chokeBox.addItemList ({ "Apagado", "Todos" }, 1);
+    setupCaption (channelCaption, "CANAL MIDI", juce::Justification::centredLeft, tabAdvanced);
+    addToTab (tabAdvanced, channelBox);
+    channelBox.addItem ("Todos", 1);
+    for (int c = 1; c <= 16; ++c)
+        channelBox.addItem (juce::String (c), c + 1);
     for (auto* b : { &pitchDownButton, &pitchUpButton, &pitchResetButton })
         addToTab (tabGlobal, *b);
     pitchDownButton.setColour (juce::TextButton::buttonColourId, kInkDim);
@@ -831,6 +870,18 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     addToTab (tabMidi, learnButton);
     addToTab (tabMidi, keysButton);
     setupKnob (root, "Nota base", "", tabMidi);
+    addToTab (tabMidi, midiInButton);
+    setupCaption (rangeCaption, "RANGO MIDI", juce::Justification::centredLeft, tabMidi);
+    setupCaption (rangeDash, "A", juce::Justification::centred, tabMidi);
+    setupCaption (aftertouchCaption, "AFTERTOUCH", juce::Justification::centredLeft, tabMidi);
+    for (auto* box : { &rangeLoBox, &rangeHiBox, &aftertouchBox })
+        addToTab (tabMidi, *box);
+    for (int n = 0; n < 128; ++n)
+    {
+        rangeLoBox.addItem (noteName (n), n + 1);
+        rangeHiBox.addItem (noteName (n), n + 1);
+    }
+    aftertouchBox.addItemList ({ "Apagado", "Volumen" }, 1);
     learnButton.setClickingTogglesState (true);
     learnButton.onClick = [this]
     {
@@ -851,6 +902,11 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     voicesAtt = std::make_unique<ComboAttachment> (proc.apvts, "voices", voicesBox);
     chokeAtt = std::make_unique<ComboAttachment> (proc.apvts, "choke", chokeBox);
     invAtt = std::make_unique<ButtonAttachment> (proc.apvts, "inv", invButton);
+    channelAtt = std::make_unique<ComboAttachment> (proc.apvts, "midich", channelBox);
+    rangeLoAtt = std::make_unique<ComboAttachment> (proc.apvts, "rangelo", rangeLoBox);
+    rangeHiAtt = std::make_unique<ComboAttachment> (proc.apvts, "rangehi", rangeHiBox);
+    aftertouchAtt = std::make_unique<ComboAttachment> (proc.apvts, "aftertouch", aftertouchBox);
+    midiInAtt = std::make_unique<ButtonAttachment> (proc.apvts, "midiin", midiInButton);
     root.attachment = std::make_unique<SliderAttachment> (proc.apvts, "root", root.slider);
     // despues del attachment, que si no pisa el texto
     root.slider.textFromValueFunction = [] (double v) { return noteName ((int) std::lround (v)); };
@@ -983,6 +1039,66 @@ void SamplerEditor::showSliceMenu (int pad)
                         });
 }
 
+void SamplerEditor::refreshPresets()
+{
+    shownPreset = proc.getPresetName();
+    presetBox.clear (juce::dontSendNotification);
+    presetBox.addItem ("Predeterminado", 1);
+    int id = 2, selected = shownPreset.isEmpty() ? 1 : 0;
+    for (const auto& name : proc.getPresetNames())
+    {
+        if (name == shownPreset)
+            selected = id;
+        presetBox.addItem (name, id++);
+    }
+    presetBox.setSelectedId (selected, juce::dontSendNotification);
+    presetBox.setTextWhenNothingSelected (shownPreset.isEmpty() ? juce::String ("Predeterminado") : shownPreset);
+}
+
+void SamplerEditor::refreshKeyBox()
+{
+    const int root = proc.getKeyRoot();
+    const bool minor = proc.isKeyMinor();
+    if (root != shownKeyRoot || minor != shownKeyMinor)
+    {
+        // la lista depende de la tonalidad detectada: mismas 12 notas, mismo modo
+        shownKeyRoot = root;
+        shownKeyMinor = minor;
+        keyBox.clear (juce::dontSendNotification);
+        if (root >= 0)
+        {
+            keyBox.addItem ("Original (" + eng::keyName (root, minor) + ")", 1);
+            for (int k = 0; k < 12; ++k)
+                keyBox.addItem (eng::keyName (k, minor), k + 2);
+        }
+        keyBox.setEnabled (root >= 0);
+    }
+
+    if (root >= 0 && ! keyBox.isPopupActive())
+    {
+        const int current = proc.getCurrentKeyRoot();
+        keyBox.setSelectedId (current == root ? 1 : current + 2, juce::dontSendNotification);
+    }
+}
+
+void SamplerEditor::askPresetName()
+{
+    auto* window = new juce::AlertWindow ("Guardar preset", "Nombre del preset:", juce::MessageBoxIconType::NoIcon, this);
+    window->addTextEditor ("name", proc.getPresetName());
+    window->addButton ("Guardar", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    window->addButton ("Cancelar", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<SamplerEditor> safe (this);
+    window->enterModalState (true, juce::ModalCallbackFunction::create ([safe, window] (int result)
+    {
+        if (result == 1 && safe != nullptr)
+        {
+            safe->proc.savePreset (window->getTextEditorContents ("name"));
+            safe->refreshPresets();
+        }
+    }), true);
+}
+
 void SamplerEditor::setPadGate (bool gate)
 {
     if (auto* param = proc.apvts.getParameter (SamplerProcessor::padParamId (proc.getSelectedPad(), "gate")))
@@ -1044,9 +1160,8 @@ void SamplerEditor::refresh()
                        juce::dontSendNotification);
     if (! bpmLabel.isBeingEdited())
         bpmLabel.setText (juce::String (proc.getSampleBpm(), 2), juce::dontSendNotification);
-    infoLabel.setText (src != nullptr ? "BPM: " + juce::String (proc.getSampleBpm(), 2) + "    TONAL: --"
-                                      : juce::String ("BPM: --    TONAL: --"),
-                       juce::dontSendNotification);
+    if (proc.getPresetName() != shownPreset)
+        refreshPresets();
 
     // pestana PAD
     padTitle.setText ("PAD " + juce::String (pad + 1).paddedLeft ('0', 2), juce::dontSendNotification);
@@ -1103,6 +1218,12 @@ void SamplerEditor::updateLive()
     pitchLcd.setText (semis == 0 ? juce::String ("0 ST") : (semis > 0 ? "+" : "") + juce::String (semis) + " ST",
                       juce::dontSendNotification);
     pitchLcd.setColour (juce::Label::textColourId, semis == 0 ? kLcdDim : kRed);
+
+    infoLabel.setText (proc.getSource() != nullptr
+                           ? "BPM: " + juce::String (proc.getSampleBpm(), 2) + "    TONAL: " + proc.getKeyText()
+                           : juce::String ("BPM: --    TONAL: --"),
+                       juce::dontSendNotification);
+    refreshKeyBox();
 
     const auto gateId = SamplerProcessor::padParamId (proc.getSelectedPad(), "gate");
     const bool gate = proc.apvts.getRawParameterValue (gateId)->load() > 0.5f;
@@ -1203,10 +1324,9 @@ void SamplerEditor::paint (juce::Graphics& g)
 
     g.setColour (kInkDim);
     g.setFont (sans (10.0f));
-    const auto credits = footerBounds.withTrimmedLeft (sampleBounds.getRight() - footerBounds.getX() + 20);
-    g.drawText ("16 PAD SLICE SAMPLER", credits.withTrimmedBottom (credits.getHeight() / 2), juce::Justification::bottomRight);
-    g.drawText (juce::String ("V") + JucePlugin_VersionString, credits.withTrimmedTop (credits.getHeight() / 2 + 4),
-                juce::Justification::topRight);
+    g.drawText (juce::String ("V") + JucePlugin_VersionString,
+                presetFolderButton.getBounds().withX (presetFolderButton.getRight()).withRight (footerBounds.getRight()),
+                juce::Justification::centredRight);
 }
 
 void SamplerEditor::paintOverChildren (juce::Graphics& g)
@@ -1244,6 +1364,15 @@ void SamplerEditor::resized()
     navRightButton.setBounds (sampleButtons.removeFromRight (40));
     sampleButtons.removeFromRight (4);
     navLeftButton.setBounds (sampleButtons.removeFromRight (40));
+
+    auto presets = footerBounds.withTrimmedLeft (sampleBounds.getRight() - footerBounds.getX() + 24);
+    presetCaption.setBounds (presets.removeFromTop (16));
+    presets.removeFromTop (3);
+    auto presetButtons = presets.removeFromBottom (32);
+    presetBox.setBounds (presets.removeFromTop (34));
+    presetSaveButton.setBounds (presetButtons.removeFromLeft (100));
+    presetButtons.removeFromLeft (6);
+    presetFolderButton.setBounds (presetButtons.removeFromLeft (100));
 
     //---- cabecera
     auto top = area.removeFromTop (36);
@@ -1406,6 +1535,11 @@ void SamplerEditor::resized()
         pitchUpButton.setBounds (row.removeFromLeft (52));
         row.removeFromLeft (6);
         pitchResetButton.setBounds (row.removeFromLeft (110));
+        a.removeFromTop (10);
+
+        auto keyArea = a.withTrimmedLeft (kw * 2);
+        keyCaption.setBounds (keyArea.removeFromTop (14));
+        keyBox.setBounds (keyArea.removeFromTop (32).removeFromLeft (232));
     }
 
     // AVANZADO
@@ -1418,8 +1552,13 @@ void SamplerEditor::resized()
         layoutKnob (vel, knobs.removeFromLeft (kw));
         layoutKnob (swing, knobs.removeFromLeft (kw));
         a.removeFromTop (10);
-        chokeCaption.setBounds (a.removeFromTop (14));
-        chokeBox.setBounds (a.removeFromTop (32).removeFromLeft (170));
+        auto captions = a.removeFromTop (14);
+        chokeCaption.setBounds (captions.removeFromLeft (186));
+        channelCaption.setBounds (captions.removeFromLeft (186));
+        auto boxes = a.removeFromTop (32);
+        chokeBox.setBounds (boxes.removeFromLeft (170));
+        boxes.removeFromLeft (16);
+        channelBox.setBounds (boxes.removeFromLeft (170));
     }
 
     // MIDI
@@ -1435,5 +1574,20 @@ void SamplerEditor::resized()
         keysButton.setBounds (column.removeFromTop (32));
         column.removeFromTop (8);
         learnButton.setBounds (column.removeFromTop (32));
+
+        knobs.removeFromLeft (20);
+        auto right = knobs.removeFromLeft (190);
+        right.removeFromTop (14);
+        midiInButton.setBounds (right.removeFromTop (32));
+        right.removeFromTop (6);
+        aftertouchCaption.setBounds (right.removeFromTop (14));
+        aftertouchBox.setBounds (right.removeFromTop (32));
+
+        a.removeFromTop (16);
+        rangeCaption.setBounds (a.removeFromTop (14));
+        auto range = a.removeFromTop (32);
+        rangeLoBox.setBounds (range.removeFromLeft (110));
+        rangeDash.setBounds (range.removeFromLeft (28));
+        rangeHiBox.setBounds (range.removeFromLeft (110));
     }
 }

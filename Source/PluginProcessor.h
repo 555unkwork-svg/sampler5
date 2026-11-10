@@ -102,6 +102,24 @@ public:
 
     const eng::Analysis& getAnalysis() const { return analysis; }
 
+    //---- tonalidad
+    int getKeyRoot() const { return keyRoot; }        // -1: no detectada
+    bool isKeyMinor() const { return keyMinor; }
+    int getCurrentKeyRoot() const;                    // la detectada corrida por el pitch global
+    juce::String getKeyText() const;                  // "A#m" o "A#m > Cm"
+    void setTargetKey (int root);                     // ajusta el pitch global para llegar a esa tonalidad
+
+    //---- presets (kits con ruta al audio)
+    static juce::File getPresetFolder();
+    juce::StringArray getPresetNames() const;
+    bool savePreset (const juce::String& name);
+    bool loadPreset (const juce::String& name);
+    void loadDefaultPreset();
+    juce::String getPresetName() const { return presetName; }
+
+    /** true si el audio va guardado dentro del proyecto. */
+    bool hasEmbeddedAudio() const { return embedded != nullptr; }
+
     int getSelectedPad() const { return selectedPad.load(); }
     void setSelectedPad (int pad);
 
@@ -125,6 +143,7 @@ private:
         double bpm = 0.0;
         std::array<Slice, eng::kNumPads> slices {};
         juce::int64 regionStart = 0, regionEnd = -1;
+        std::shared_ptr<const juce::MemoryBlock> audioData;   // audio guardado en el proyecto
     };
 
     struct LoadResult
@@ -135,6 +154,7 @@ private:
         eng::Analysis analysis;
         juce::String error;
         std::optional<RestoreInfo> restore;
+        std::shared_ptr<const juce::MemoryBlock> embedded;
     };
 
     struct StretchResult
@@ -152,6 +172,8 @@ private:
     void updateTempoTarget();
     double currentSpeed() const;
     double detectedBpm() const;
+    std::unique_ptr<juce::XmlElement> buildStateXml();
+    void applyStateXml (const juce::XmlElement&, std::shared_ptr<const juce::MemoryBlock> audioData);
 
     // parametros (punteros crudos, validos mientras viva apvts)
     struct PadParamPtrs
@@ -163,7 +185,8 @@ private:
     std::atomic<float>* masterParam = nullptr, *velParam = nullptr, *monoParam = nullptr, *syncParam = nullptr,
                       * stretchParam = nullptr, *tuneParam = nullptr, *keysParam = nullptr, *rootParam = nullptr,
                       * panParam = nullptr, *voicesParam = nullptr, *humanizeParam = nullptr, *swingParam = nullptr,
-                      * chokeParam = nullptr, *invParam = nullptr;
+                      * chokeParam = nullptr, *invParam = nullptr, *midiChParam = nullptr, *midiInParam = nullptr,
+                      * rangeLoParam = nullptr, *rangeHiParam = nullptr, *aftertouchParam = nullptr;
 
     // modelo
     juce::CriticalSection modelLock;      // para get/setStateInformation desde otros hilos
@@ -178,6 +201,10 @@ private:
     double manualBpm = 120.0;
     juce::int64 regionStart = 0, regionEnd = -1;   // -1: hasta el final
     bool snapEnabled = true;
+    int keyRoot = -1;
+    bool keyMinor = false;
+    std::shared_ptr<const juce::MemoryBlock> embedded;   // el audio en FLAC, para guardarlo en el proyecto
+    juce::String presetName;
     SnapMode snapMode = SnapMode::automatic;
     std::atomic<int> selectedPad { 0 };
     juce::String errorText;

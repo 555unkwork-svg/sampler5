@@ -145,6 +145,45 @@ static void testVocalChops()
     CHECK (eng::bpmFromFileName ("kick 01") == 0.0, "no deberia inventar un tempo");
 }
 
+static void testKey()
+{
+    std::printf ("Tonalidad\n");
+    auto progression = [] (std::vector<std::vector<int>> chords)
+    {
+        const int chordLen = (int) kRate;
+        juce::AudioBuffer<float> buf (1, chordLen * (int) chords.size() * 2);
+        buf.clear();
+        for (int rep = 0; rep < 2; ++rep)
+            for (size_t c = 0; c < chords.size(); ++c)
+                for (int note : chords[c])
+                    for (int h = 1; h <= 3; ++h)
+                    {
+                        const double freq = 440.0 * std::pow (2.0, (note - 69) / 12.0) * h;
+                        const int start = (int) ((size_t) rep * chords.size() + c) * chordLen;
+                        for (int i = 0; i < chordLen; ++i)
+                            buf.addSample (0, start + i, (float) (0.1 / h * std::sin (2.0 * juce::MathConstants<double>::pi * freq * i / kRate)
+                                                                  * std::exp (-(double) i / (kRate * 0.5))));
+                    }
+        return buf;
+    };
+
+    // La menor: Am Dm Em Am   /   Do mayor: C F G C   /   La# menor: A#m D#m Fm A#m
+    const auto am = eng::analyse (progression ({ { 57, 60, 64 }, { 62, 65, 69 }, { 64, 67, 71 }, { 57, 60, 64 } }), kRate);
+    const auto cmaj = eng::analyse (progression ({ { 60, 64, 67 }, { 65, 69, 72 }, { 67, 71, 74 }, { 60, 64, 67 } }), kRate);
+    const auto bbm = eng::analyse (progression ({ { 58, 61, 65 }, { 63, 66, 70 }, { 65, 68, 72 }, { 58, 61, 65 } }), kRate);
+    std::printf ("  detectado: %s, %s, %s (esperado Am, C, A#m)\n", eng::keyName (am.keyRoot, am.keyMinor).toRawUTF8(),
+                 eng::keyName (cmaj.keyRoot, cmaj.keyMinor).toRawUTF8(), eng::keyName (bbm.keyRoot, bbm.keyMinor).toRawUTF8());
+    CHECK (am.keyRoot == 9 && am.keyMinor, "La menor");
+    CHECK (cmaj.keyRoot == 0 && ! cmaj.keyMinor, "Do mayor");
+    CHECK (bbm.keyRoot == 10 && bbm.keyMinor, "La# menor");
+
+    int root = -1; bool minor = false;
+    CHECK (eng::keyFromFileName ("91V_VHA3_130_vocal_vocoder_chop_wait_for_you_echo_A#m", root, minor) && root == 10 && minor, "tonalidad del nombre");
+    CHECK (eng::keyFromFileName ("pad_Fmaj_90", root, minor) && root == 5 && ! minor, "Fmaj");
+    CHECK (eng::keyFromFileName ("bass_Eb_loop", root, minor) && root == 3 && ! minor, "Eb");
+    CHECK (! eng::keyFromFileName ("A_great_Drum_loop_Golpe", root, minor), "no deberia inventar una tonalidad");
+}
+
 static void testSlices()
 {
     std::printf ("Cortes\n");
@@ -507,6 +546,37 @@ static void testEngine()
     CHECK (hi > lo * 1.1f && lo > 0.1f, "humanizar: niveles %.3f a %.3f", lo, hi);
     engine.globals.humanize = 0.0f;
 
+    // ---- etapa 3: MIDI ----
+    auto playOn = [&] (int channel, int note)
+    {
+        juce::MidiBuffer mb;
+        mb.addEvent (juce::MidiMessage::noteOn (channel, note, 1.0f), 0);
+        const float level = render (mb, 4).getMagnitude (0, 0, 2000);
+        quiet();
+        return level;
+    };
+    engine.globals.midiChannel = 2;
+    CHECK (playOn (1, 36) == 0.0f && playOn (2, 36) > 0.0f, "CANAL MIDI");
+    engine.globals.midiChannel = 0;
+    engine.globals.rangeLo = 40;
+    CHECK (playOn (1, 36) == 0.0f, "RANGO MIDI");
+    engine.globals.rangeLo = 0;
+    engine.globals.midiIn = false;
+    CHECK (playOn (1, 36) == 0.0f, "ENTRADA MIDI apagada");
+    engine.globals.midiIn = true;
+    engine.globals.aftertouchVolume = true;
+    {
+        juce::MidiBuffer mb;
+        mb.addEvent (juce::MidiMessage::noteOn (1, 36, 1.0f), 0);
+        const float before = render (mb, 12).getRMSLevel (0, 3000, 2000);
+        juce::MidiBuffer at;
+        at.addEvent (juce::MidiMessage::channelPressureChange (1, 127), 0);
+        const float after = render (at, 12).getRMSLevel (0, 3000, 2000);
+        CHECK (std::abs (after / before - 2.0f) < 0.1f, "aftertouch a volumen: x%.2f", after / before);
+        quiet();
+    }
+    engine.globals.aftertouchVolume = false;
+
     // polifonia: muchas notas juntas no rompen nada
     juce::MidiBuffer many;
     engine.setPlayable (makePlayable (audio, { 0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000 }));
@@ -530,6 +600,7 @@ int main()
 {
     testAnalysis();
     testVocalChops();
+    testKey();
     testSlices();
     testStretch();
     testEngine();

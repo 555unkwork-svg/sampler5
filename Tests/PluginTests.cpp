@@ -252,6 +252,63 @@ static void runTests (const juce::String& screenshotPath)
     playAndMeasure (*second, 100, 20, &peak2);
     CHECK (peak2 > 0.01f, "el plugin restaurado no suena");
 
+    std::printf ("Audio dentro del proyecto y presets\n");
+    {
+        // el audio viaja en el estado: se restaura aunque el archivo ya no este
+        juce::MemoryBlock withAudio;
+        bool embedded = false;
+        onMessageThread ([&] { embedded = second->hasEmbeddedAudio(); second->getStateInformation (withAudio); });
+        CHECK (embedded, "el audio no quedo guardado para el proyecto");
+        const auto hidden = file.getSiblingFile ("sampler5_test_loop_oculto.wav");
+        hidden.deleteFile();
+        file.moveFileTo (hidden);
+
+        std::unique_ptr<SamplerProcessor> third;
+        onMessageThread ([&]
+        {
+            third = std::make_unique<SamplerProcessor>();
+            third->setRateAndBufferSizeDetails (kRate, 512);
+            third->prepareToPlay (kRate, 512);
+            third->setStateInformation (withAudio.getData(), (int) withAudio.getSize());
+        });
+        CHECK (waitUntilIdle (*third), "la restauracion no termino");
+        bool hasAudio = false;
+        onMessageThread ([&] { hasAudio = third->getSource() != nullptr && third->getSliceName (5) == "Caja"; });
+        std::printf ("  estado de %d KB; sin el archivo en disco, el audio vuelve: %s\n", (int) (withAudio.getSize() / 1024), hasAudio ? "si" : "no");
+        CHECK (hasAudio, "el audio guardado en el proyecto no se restauro");
+        float p3 = 0.0f;
+        playAndMeasure (*third, 100, 20, &p3);
+        CHECK (p3 > 0.01f, "el plugin restaurado desde el proyecto no suena");
+        hidden.moveFileTo (file);
+
+        // presets: guardar, volver al predeterminado y cargar
+        const juce::String presetName ("prueba_automatica_sampler5");
+        bool saved = false, listed = false;
+        onMessageThread ([&]
+        {
+            saved = third->savePreset (presetName);
+            listed = third->getPresetNames().contains (presetName);
+            third->loadDefaultPreset();
+        });
+        CHECK (saved && listed, "el preset no se guardo");
+        CHECK (waitUntilIdle (*third), "predeterminado");
+        bool empty = false;
+        onMessageThread ([&] { empty = third->getSource() == nullptr && third->apvts.getRawParameterValue ("sync")->load() < 0.5f; });
+        CHECK (empty, "Predeterminado deberia dejar el plugin vacio");
+        bool loadedOk = false;
+        onMessageThread ([&] { loadedOk = third->loadPreset (presetName); });
+        CHECK (loadedOk && waitUntilIdle (*third), "el preset no cargo");
+        bool back = false;
+        onMessageThread ([&]
+        {
+            back = third->getSource() != nullptr && third->getSliceName (5) == "Caja" && third->getPresetName() == presetName;
+            SamplerProcessor::getPresetFolder().getChildFile (presetName + ".s5kit").deleteFile();
+            third.reset();
+        });
+        std::printf ("  preset guardado, vaciado y vuelto a cargar: %s\n", back ? "si" : "no");
+        CHECK (back, "el preset no devolvio el kit");
+    }
+
     // sin tempo del host (standalone): SYNC usa el tempo manual
     {
         std::unique_ptr<SamplerProcessor> solo;

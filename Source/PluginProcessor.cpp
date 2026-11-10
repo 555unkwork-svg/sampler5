@@ -51,6 +51,14 @@ APVTS::ParameterLayout SamplerProcessor::createLayout()
     layout.add (std::make_unique<F> (juce::ParameterID { "swing", 1 }, "Swing", Range (50.0f, 75.0f, 1.0f), 50.0f));
     layout.add (std::make_unique<C> (juce::ParameterID { "choke", 1 }, "Choke", juce::StringArray { "Apagado", "Todos" }, 0));
     layout.add (std::make_unique<B> (juce::ParameterID { "inv", 1 }, "Inv", false));
+    juce::StringArray channels { "Todos" };
+    for (int c = 1; c <= 16; ++c)
+        channels.add (juce::String (c));
+    layout.add (std::make_unique<C> (juce::ParameterID { "midich", 1 }, "Canal MIDI", channels, 0));
+    layout.add (std::make_unique<B> (juce::ParameterID { "midiin", 1 }, "Entrada MIDI", true));
+    layout.add (std::make_unique<I> (juce::ParameterID { "rangelo", 1 }, "Rango MIDI desde", 0, 127, 0));
+    layout.add (std::make_unique<I> (juce::ParameterID { "rangehi", 1 }, "Rango MIDI hasta", 0, 127, 127));
+    layout.add (std::make_unique<C> (juce::ParameterID { "aftertouch", 1 }, "Aftertouch", juce::StringArray { "Apagado", "Volumen" }, 0));
 
     for (int i = 0; i < eng::kNumPads; ++i)
     {
@@ -98,6 +106,11 @@ SamplerProcessor::SamplerProcessor()
     swingParam = apvts.getRawParameterValue ("swing");
     chokeParam = apvts.getRawParameterValue ("choke");
     invParam = apvts.getRawParameterValue ("inv");
+    midiChParam = apvts.getRawParameterValue ("midich");
+    midiInParam = apvts.getRawParameterValue ("midiin");
+    rangeLoParam = apvts.getRawParameterValue ("rangelo");
+    rangeHiParam = apvts.getRawParameterValue ("rangehi");
+    aftertouchParam = apvts.getRawParameterValue ("aftertouch");
 
     for (int i = 0; i < eng::kNumPads; ++i)
     {
@@ -197,6 +210,11 @@ void SamplerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     g.swing = swingParam->load (std::memory_order_relaxed) * 0.01f;
     g.chokeAll = chokeParam->load (std::memory_order_relaxed) > 0.5f;
     g.invertAll = invParam->load (std::memory_order_relaxed) > 0.5f;
+    g.midiChannel = (int) std::lround (midiChParam->load (std::memory_order_relaxed));
+    g.midiIn = midiInParam->load (std::memory_order_relaxed) > 0.5f;
+    g.rangeLo = (int) std::lround (rangeLoParam->load (std::memory_order_relaxed));
+    g.rangeHi = (int) std::lround (rangeHiParam->load (std::memory_order_relaxed));
+    g.aftertouchVolume = aftertouchParam->load (std::memory_order_relaxed) > 0.5f;
 
     engine.process (buffer, midi);
 }
@@ -228,7 +246,16 @@ void SamplerProcessor::startLoad (const juce::File& file, std::optional<RestoreI
         result.file = file;
         result.restore = restore;
 
-        std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
+        // si el proyecto trae el audio adentro, se usa ese; si no, el archivo
+        const auto stored = restore.has_value() ? restore->audioData : nullptr;
+        std::unique_ptr<juce::AudioFormatReader> reader;
+        if (stored != nullptr)
+            reader.reset (formats.createReaderFor (std::make_unique<juce::MemoryInputStream> (*stored, false)));
+        if (reader != nullptr)
+            result.embedded = stored;
+        else
+            reader.reset (formats.createReaderFor (file));
+
         if (reader == nullptr || reader->lengthInSamples <= 0 || reader->sampleRate <= 0.0)
         {
             result.error = file.existsAsFile() ? "No se pudo leer el audio: " + file.getFileName()
@@ -247,6 +274,23 @@ void SamplerProcessor::startLoad (const juce::File& file, std::optional<RestoreI
 
             if (generation == loadGeneration.load())
                 result.analysis = eng::analyse (data->buffer, data->sampleRate);
+
+            if (result.embedded == nullptr && generation == loadGeneration.load())
+            {
+                // copia sin perdida (FLAC) para guardar dentro del proyecto
+                auto block = std::make_shared<juce::MemoryBlock>();
+                {
+                    std::unique_ptr<juce::OutputStream> stream = std::make_unique<juce::MemoryOutputStream> (*block, false);
+                    juce::FlacAudioFormat flac;
+                    if (auto writer = flac.createWriterFor (stream, juce::AudioFormatWriterOptions()
+                                                                        .withSampleRate (data->sampleRate)
+                                                                        .withNumChannels (chans)
+                                                                        .withBitsPerSample (24)))
+                        writer->writeFromAudioSampleBuffer (data->buffer, 0, length);
+                }
+                if (block->getSize() > 0)
+                    result.embedded = std::move (block);
+            }
             result.audio = std::move (data);
         }
 
@@ -283,6 +327,12 @@ void SamplerProcessor::finishLoad (LoadResult& result)
         sampleFile = result.file;
         source = result.audio;
         analysis = std::move (result.analysis);
+        embedded = result.embedded;
+
+        // tonalidad: la del nombre del archivo manda; si no hay, la detectada
+        keyRoot = analysis.keyRoot;
+        keyMinor = analysis.keyMinor;
+        eng::keyFromFileName (sampleFile.getFileNameWithoutExtension(), keyRoot, keyMinor);
 
         if (result.restore.has_value())
         {
@@ -720,7 +770,7 @@ void SamplerProcessor::timerCallback()
 
     if (restore.has_value())
     {
-        if (restore->file == juce::File())
+        if (restore->file == juce::File() && restore->audioData == nullptr)
         {
             // estado sin audio
             ++loadGeneration;
@@ -731,6 +781,9 @@ void SamplerProcessor::timerCallback()
             stretched.reset();
             {
                 const juce::ScopedLock lock (modelLock);
+                embedded.reset();
+                keyRoot = -1;
+                analysis = {};
                 sampleFile = juce::File();
                 slices = restore->slices;
             }
@@ -782,10 +835,17 @@ juce::String SamplerProcessor::getStatusText() const
 //==============================================================================
 // Estado guardado. El audio se guarda como ruta al archivo, no adentro del proyecto.
 
-void SamplerProcessor::getStateInformation (juce::MemoryBlock& destData)
+namespace
 {
-    juce::XmlElement root ("Sampler5State");
-    root.setAttribute ("version", 1);   // version del formato de estado
+constexpr int kStateMagic = 0x54533553;   // "S5ST": XML + audio
+}
+
+std::unique_ptr<juce::XmlElement> SamplerProcessor::buildStateXml()
+{
+    auto xml = std::make_unique<juce::XmlElement> ("Sampler5State");
+    auto& root = *xml;
+    root.setAttribute ("version", 2);   // version del formato de estado
+    root.setAttribute ("presetName", presetName);
 
     if (auto params = apvts.copyState().createXml())
         root.addChildElement (params.release());
@@ -817,19 +877,67 @@ void SamplerProcessor::getStateInformation (juce::MemoryBlock& destData)
         }
     }
 
-    copyXmlToBinary (root, destData);
+    return xml;
+}
+
+void SamplerProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    const auto xml = buildStateXml();
+    juce::MemoryBlock xmlBlock;
+    copyXmlToBinary (*xml, xmlBlock);
+
+    std::shared_ptr<const juce::MemoryBlock> audio;
+    {
+        const juce::ScopedLock lock (modelLock);
+        audio = embedded;
+    }
+
+    // formato: marca, tamano del XML, XML, y despues el audio en FLAC (si hay)
+    juce::MemoryOutputStream out (destData, false);
+    out.writeInt (kStateMagic);
+    out.writeInt ((int) xmlBlock.getSize());
+    out.write (xmlBlock.getData(), xmlBlock.getSize());
+    if (audio != nullptr)
+        out.write (audio->getData(), audio->getSize());
 }
 
 void SamplerProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    const auto root = getXmlFromBinary (data, sizeInBytes);
-    if (root == nullptr || ! root->hasTagName ("Sampler5State"))
-        return;
+    std::unique_ptr<juce::XmlElement> xml;
+    std::shared_ptr<const juce::MemoryBlock> audio;
+
+    juce::MemoryInputStream in (data, (size_t) std::max (0, sizeInBytes), false);
+    if (sizeInBytes > 8 && in.readInt() == kStateMagic)
+    {
+        const int xmlSize = in.readInt();
+        if (xmlSize > 0 && xmlSize <= sizeInBytes - 8)
+        {
+            const auto* bytes = static_cast<const char*> (data);
+            xml = getXmlFromBinary (bytes + 8, xmlSize);
+            const int audioSize = sizeInBytes - 8 - xmlSize;
+            if (audioSize > 0)
+                audio = std::make_shared<juce::MemoryBlock> (bytes + 8 + xmlSize, (size_t) audioSize);
+        }
+    }
+    else
+    {
+        xml = getXmlFromBinary (data, sizeInBytes);   // proyectos de versiones anteriores
+    }
+
+    if (xml != nullptr && xml->hasTagName ("Sampler5State"))
+        applyStateXml (*xml, std::move (audio));
+}
+
+void SamplerProcessor::applyStateXml (const juce::XmlElement& rootXml, std::shared_ptr<const juce::MemoryBlock> audioData)
+{
+    const auto* root = &rootXml;
+    presetName = root->getStringAttribute ("presetName");
 
     if (auto* params = root->getChildByName (apvts.state.getType()))
         apvts.replaceState (juce::ValueTree::fromXml (*params));
 
     RestoreInfo info;
+    info.audioData = std::move (audioData);
     const auto path = root->getStringAttribute ("file");
     if (path.isNotEmpty() && juce::File::isAbsolutePath (path))
         info.file = juce::File (path);
@@ -868,6 +976,109 @@ void SamplerProcessor::setStateInformation (const void* data, int sizeInBytes)
     // el resto se aplica en el hilo de mensajes (ver timerCallback)
     const juce::ScopedLock lock (resultLock);
     pendingRestore = std::move (info);
+}
+
+//==============================================================================
+// Tonalidad
+
+int SamplerProcessor::getCurrentKeyRoot() const
+{
+    if (keyRoot < 0)
+        return -1;
+    return ((keyRoot + (int) std::lround (tuneParam->load())) % 12 + 12) % 12;
+}
+
+juce::String SamplerProcessor::getKeyText() const
+{
+    if (keyRoot < 0)
+        return "--";
+    const auto original = eng::keyName (keyRoot, keyMinor);
+    const int current = getCurrentKeyRoot();
+    return current == keyRoot ? original : original + " > " + eng::keyName (current, keyMinor);
+}
+
+void SamplerProcessor::setTargetKey (int root)
+{
+    if (keyRoot < 0)
+        return;
+    // el camino mas corto: de -6 a +5 semitonos
+    int shift = root < 0 ? 0 : ((root - keyRoot) % 12 + 12) % 12;
+    if (shift > 5)
+        shift -= 12;
+    if (auto* param = apvts.getParameter ("tune"))
+    {
+        param->beginChangeGesture();
+        param->setValueNotifyingHost (param->convertTo0to1 ((float) shift));
+        param->endChangeGesture();
+    }
+    sendChangeMessage();
+}
+
+//==============================================================================
+// Presets: kits con la ruta al audio, en Documentos/sampler5/Presets
+
+juce::File SamplerProcessor::getPresetFolder()
+{
+    return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+               .getChildFile ("sampler5").getChildFile ("Presets");
+}
+
+juce::StringArray SamplerProcessor::getPresetNames() const
+{
+    juce::StringArray names;
+    for (const auto& f : getPresetFolder().findChildFiles (juce::File::findFiles, false, "*.s5kit"))
+        names.add (f.getFileNameWithoutExtension());
+    names.sortNatural();
+    return names;
+}
+
+bool SamplerProcessor::savePreset (const juce::String& name)
+{
+    const auto clean = juce::File::createLegalFileName (name.trim()).substring (0, 60);
+    if (clean.isEmpty())
+        return false;
+    const auto folder = getPresetFolder();
+    if (! folder.createDirectory())
+        return false;
+
+    presetName = clean;
+    const auto xml = buildStateXml();
+    const bool ok = xml->writeTo (folder.getChildFile (clean + ".s5kit"));
+    sendChangeMessage();
+    return ok;
+}
+
+bool SamplerProcessor::loadPreset (const juce::String& name)
+{
+    const auto file = getPresetFolder().getChildFile (name + ".s5kit");
+    const auto xml = juce::parseXML (file);
+    if (xml == nullptr || ! xml->hasTagName ("Sampler5State"))
+        return false;
+    applyStateXml (*xml, nullptr);
+    presetName = name;
+    sendChangeMessage();
+    return true;
+}
+
+void SamplerProcessor::loadDefaultPreset()
+{
+    for (auto* param : getParameters())
+        param->setValueNotifyingHost (param->getDefaultValue());
+    for (int i = 0; i < eng::kNumPads; ++i)
+        engine.padNote[(size_t) i].store (eng::SamplerEngine::kDefaultFirstNote + i);
+    {
+        const juce::ScopedLock lock (modelLock);
+        sliceMode = eng::SliceMode::transients;
+        gridIndex = 2;
+        sensitivity = 0.5;
+        snapEnabled = true;
+        snapMode = SnapMode::automatic;
+    }
+    selectedPad.store (0);
+    presetName.clear();
+
+    const juce::ScopedLock lock (resultLock);
+    pendingRestore = RestoreInfo {};   // sin audio
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
