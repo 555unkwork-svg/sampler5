@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.24)
 
 # ---- Datos del producto: cambiar aca nombre y marca -------------------------
-set(PLUGIN_NAME      "Sampler16")      # nombre provisorio
+set(PLUGIN_NAME      "sampler5")
 set(PLUGIN_COMPANY   "MiMarca")        # marca provisoria
 set(PLUGIN_MFR_CODE  "Mmrc")           # 4 caracteres, al menos una mayuscula
-set(PLUGIN_CODE      "Smp6")           # 4 caracteres, exactamente una mayuscula
+set(PLUGIN_CODE      "Smp5")           # 4 caracteres, exactamente una mayuscula
 # -----------------------------------------------------------------------------
 
-project(Sampler16 VERSION 0.1.0 LANGUAGES C CXX)
+project(Sampler5 VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -49,7 +49,7 @@ function(sampler_configure_target target)
 endfunction()
 
 # ---- Plugin ------------------------------------------------------------------
-juce_add_plugin(Sampler16
+juce_add_plugin(Sampler5
     COMPANY_NAME "${PLUGIN_COMPANY}"
     PLUGIN_MANUFACTURER_CODE ${PLUGIN_MFR_CODE}
     PLUGIN_CODE ${PLUGIN_CODE}
@@ -65,12 +65,12 @@ juce_add_plugin(Sampler16
     NEEDS_WEB_BROWSER FALSE
     NEEDS_CURL FALSE)
 
-target_sources(Sampler16 PRIVATE
+target_sources(Sampler5 PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp)
 
-sampler_configure_target(Sampler16)
-target_link_libraries(Sampler16
+sampler_configure_target(Sampler5)
+target_link_libraries(Sampler5
     PRIVATE
         juce::juce_audio_utils
     PUBLIC
@@ -86,8 +86,8 @@ if(SAMPLER_BUILD_TESTS)
     # prueba de integracion: el procesador real del plugin, sin DAW
     add_executable(PluginTests Tests/PluginTests.cpp)
     target_include_directories(PluginTests PRIVATE Source ${juce_SOURCE_DIR}/modules)
-    target_compile_definitions(PluginTests PRIVATE $<TARGET_PROPERTY:Sampler16,COMPILE_DEFINITIONS>)
-    target_link_libraries(PluginTests PRIVATE Sampler16)
+    target_compile_definitions(PluginTests PRIVATE $<TARGET_PROPERTY:Sampler5,COMPILE_DEFINITIONS>)
+    target_link_libraries(PluginTests PRIVATE Sampler5)
 
     enable_testing()
     add_test(NAME EngineTests COMMAND EngineTests)

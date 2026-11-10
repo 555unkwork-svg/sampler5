@@ -55,7 +55,7 @@ static juce::File writeDrumLoop (double bpm, int beats)
         }
     }
 
-    auto file = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sampler16_test_loop.wav");
+    auto file = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("sampler5_test_loop.wav");
     file.deleteFile();
     juce::WavAudioFormat wav;
     std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();

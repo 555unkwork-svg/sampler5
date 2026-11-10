@@ -14,7 +14,7 @@ jobs:
         run: cmake -S . -B build -A x64
 
       - name: Compilar
-        run: cmake --build build --config Release --parallel --target Sampler16_VST3 Sampler16_Standalone EngineTests
+        run: cmake --build build --config Release --parallel --target Sampler5_VST3 Sampler5_Standalone EngineTests
 
       - name: Pruebas del motor
         run: ctest --test-dir build -C Release -R EngineTests --output-on-failure
@@ -22,11 +22,11 @@ jobs:
       - name: Subir VST3
         uses: actions/upload-artifact@v4
         with:
-          name: Sampler16-VST3-Windows
-          path: build/Sampler16_artefacts/Release/VST3/
+          name: Sampler5-VST3-Windows
+          path: build/Sampler5_artefacts/Release/VST3/
 
       - name: Subir version standalone
         uses: actions/upload-artifact@v4
         with:
-          name: Sampler16-Standalone-Windows
-          path: build/Sampler16_artefacts/Release/Standalone/*.exe
+          name: Sampler5-Standalone-Windows
+          path: build/Sampler5_artefacts/Release/Standalone/*.exe

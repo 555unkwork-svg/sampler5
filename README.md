@@ -1,4 +1,4 @@
-# Sampler16 (nombre provisorio)
+# sampler5
 
 Plugin VST3 para Windows: un audio, cortado en hasta 16 pads.
 Hecho con [JUCE 9](https://juce.com) y [Signalsmith Stretch](https://signalsmith-audio.co.uk/code/stretch/).
@@ -23,11 +23,11 @@ La interfaz es provisoria; el diseno final viene despues.
 Cada vez que se sube codigo, GitHub lo compila solo:
 
 1. Pestana **Actions** del repositorio, ultimo "Compilar plugin (Windows)".
-2. Abajo, en **Artifacts**, bajar `Sampler16-VST3-Windows`.
-3. Descomprimir y copiar la carpeta `Sampler16.vst3` a `C:\Program Files\Common Files\VST3\`.
+2. Abajo, en **Artifacts**, bajar `Sampler5-VST3-Windows`.
+3. Descomprimir y copiar la carpeta `sampler5.vst3` a `C:\Program Files\Common Files\VST3\`.
 4. En el DAW, volver a escanear plugins.
 
-`Sampler16-Standalone-Windows` es el mismo plugin como programa suelto, para probar sin DAW.
+`Sampler5-Standalone-Windows` es el mismo plugin como programa suelto, para probar sin DAW.
 
 ## Estructura
 

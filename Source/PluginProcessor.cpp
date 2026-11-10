@@ -512,7 +512,7 @@ juce::String SamplerProcessor::getStatusText() const
 
 void SamplerProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    juce::XmlElement root ("Sampler16State");
+    juce::XmlElement root ("Sampler5State");
     root.setAttribute ("version", 1);
 
     if (auto params = apvts.copyState().createXml())
@@ -542,7 +542,7 @@ void SamplerProcessor::getStateInformation (juce::MemoryBlock& destData)
 void SamplerProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     const auto root = getXmlFromBinary (data, sizeInBytes);
-    if (root == nullptr || ! root->hasTagName ("Sampler16State"))
+    if (root == nullptr || ! root->hasTagName ("Sampler5State"))
         return;
 
     if (auto* params = root->getChildByName (apvts.state.getType()))
