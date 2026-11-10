@@ -286,6 +286,13 @@ void SamplerProcessor::autoSlice (eng::SliceMode mode, int gridIndexToUse)
     sendChangeMessage();
 }
 
+void SamplerProcessor::setManualBpm (double bpm)
+{
+    manualBpm = juce::jlimit (30.0, 300.0, bpm);
+    updateTempoTarget();
+    sendChangeMessage();
+}
+
 void SamplerProcessor::setSensitivity (double newSensitivity)
 {
     newSensitivity = juce::jlimit (0.0, 1.0, newSensitivity);
@@ -355,10 +362,10 @@ void SamplerProcessor::setSampleBpm (double bpm)
 
 double SamplerProcessor::currentSpeed() const
 {
-    const double host = std::round (hostBpm.load() * 100.0) / 100.0;
-    if (syncParam->load() < 0.5f || host <= 0.0 || sampleBpm <= 0.0)
+    const double target = getTargetBpm();
+    if (syncParam->load() < 0.5f || target <= 0.0 || sampleBpm <= 0.0)
         return 1.0;
-    return juce::jlimit (0.5, 2.0, host / sampleBpm);
+    return juce::jlimit (0.5, 2.0, target / sampleBpm);
 }
 
 void SamplerProcessor::rebuildPlayable()
@@ -521,11 +528,8 @@ juce::String SamplerProcessor::getStatusText() const
     const double seconds = source->buffer.getNumSamples() / source->sampleRate;
     juce::String text = juce::String (seconds, 1) + " s";
     if (syncParam->load() > 0.5f)
-    {
-        const double host = hostBpm.load();
-        text << (host > 0.0 ? "  |  proyecto " + juce::String (host, 1) + " BPM, velocidad x" + juce::String (currentSpeed(), 2)
-                            : "  |  SYNC sin efecto: no llega el tempo del proyecto");
-    }
+        text << "  |  " << (hasHostTempo() ? "proyecto " : "tempo manual ") << juce::String (getTargetBpm(), 1)
+             << " BPM  x" << juce::String (currentSpeed(), 2);
     return text;
 }
 
@@ -547,6 +551,7 @@ void SamplerProcessor::getStateInformation (juce::MemoryBlock& destData)
         root.setAttribute ("sliceMode", (int) sliceMode);
         root.setAttribute ("grid", gridIndex);
         root.setAttribute ("sens", sensitivity);
+        root.setAttribute ("manualBpm", manualBpm);
         root.setAttribute ("selectedPad", selectedPad.load());
 
         auto* pads = root.createNewChildElement ("Pads");
@@ -582,6 +587,7 @@ void SamplerProcessor::setStateInformation (const void* data, int sizeInBytes)
         sliceMode = (eng::SliceMode) juce::jlimit (0, 4, root->getIntAttribute ("sliceMode", 0));
         gridIndex = juce::jlimit (0, 4, root->getIntAttribute ("grid", 2));
         sensitivity = juce::jlimit (0.0, 1.0, root->getDoubleAttribute ("sens", 0.5));
+        manualBpm = juce::jlimit (30.0, 300.0, root->getDoubleAttribute ("manualBpm", 120.0));
     }
     selectedPad.store (juce::jlimit (0, eng::kNumPads - 1, root->getIntAttribute ("selectedPad", 0)));
 

@@ -63,6 +63,10 @@ public:
     double getSampleBpm() const { return sampleBpm; }
     void setSampleBpm (double bpm);
     double getHostBpm() const { return hostBpm.load(); }
+    /** Tempo al que apunta SYNC: el del proyecto si el host lo informa; si no, el manual. */
+    bool hasHostTempo() const { return hostBpm.load() > 0.0; }
+    double getTargetBpm() const { return hasHostTempo() ? std::round (hostBpm.load() * 100.0) / 100.0 : manualBpm; }
+    void setManualBpm (double bpm);
 
     eng::SliceMode getSliceMode() const { return sliceMode; }
     int getGridIndex() const { return gridIndex; }
@@ -138,6 +142,7 @@ private:
     eng::SliceMode sliceMode = eng::SliceMode::transients;
     int gridIndex = 2;
     double sensitivity = 0.5;
+    double manualBpm = 120.0;
     std::atomic<int> selectedPad { 0 };
     juce::String errorText;
 

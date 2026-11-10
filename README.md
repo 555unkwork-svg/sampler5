@@ -18,7 +18,10 @@ Hecho con [JUCE 9](https://juce.com) y [Signalsmith Stretch](https://signalsmith
 - Mono / poly, sensibilidad a la velocidad, master.
 - El proyecto guarda cortes, notas y parametros. El audio se guarda como ruta al archivo.
 
-La interfaz es provisoria; el diseno final viene despues.
+- **SYNC** usa el tempo del proyecto; si el host no lo informa (o en la version standalone), usa el
+  tempo que se escribe en el campo TEMPO.
+
+La interfaz tiene estilo de aparato: cuerpo gris claro, teclas con relieve, pantalla negra y acentos naranjas.
 
 ## Como conseguir el plugin
 

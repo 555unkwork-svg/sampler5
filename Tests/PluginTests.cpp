@@ -196,6 +196,31 @@ static void runTests (const juce::String& screenshotPath)
     playAndMeasure (*second, 100, 20, &peak2);
     CHECK (peak2 > 0.01f, "el plugin restaurado no suena");
 
+    // sin tempo del host (standalone): SYNC usa el tempo manual
+    {
+        std::unique_ptr<SamplerProcessor> solo;
+        onMessageThread ([&]
+        {
+            solo = std::make_unique<SamplerProcessor>();
+            solo->setRateAndBufferSizeDetails (kRate, 512);
+            solo->prepareToPlay (kRate, 512);
+            solo->loadFile (file);
+        });
+        CHECK (waitUntilIdle (*solo), "la carga no termino");
+        onMessageThread ([&]
+        {
+            solo->autoSlice (eng::SliceMode::grid, 2);
+            solo->apvts.getParameter ("sync")->setValueNotifyingHost (1.0f);
+            solo->setManualBpm (150.0);
+        });
+        CHECK (waitUntilIdle (*solo, 800), "el stretch no termino");
+        juce::Thread::sleep (200);
+        const int manual = playAndMeasure (*solo, 60, 80);
+        std::printf ("  sync con tempo manual 150 (sin host): %d muestras (esperado ~17640)\n", manual);
+        CHECK (manual > 17640 - 400 && manual <= 17640 + 2, "sync con tempo manual: %d", manual);
+        onMessageThread ([&] { solo.reset(); });
+    }
+
     std::printf ("Interfaz\n");
     onMessageThread ([&]
     {

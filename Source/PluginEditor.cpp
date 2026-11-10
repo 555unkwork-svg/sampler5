@@ -2,14 +2,206 @@
 
 namespace
 {
-const juce::Colour kBg (0xff1d1f23), kPanel (0xff282b31), kPad (0xff3a3e46), kPadEmpty (0xff2c2f35),
-                   kAccent (0xffff6a2b), kText (0xffe8e8e6), kDim (0xff8d9199), kWave (0xffb8bcc4);
+// Paleta
+const juce::Colour kBody (0xffd6d7d2), kBodyLine (0xffb4b6b0), kInk (0xff1b1c1e), kInkDim (0xff6c6f6b),
+                   kKeyDark (0xff2a2b2d), kKeyGrey (0xff9a9d98), kKeyLight (0xfff1f1ec),
+                   kOrange (0xffff5a1f), kDisplay (0xff0d0e0f), kLcd (0xffeceae2), kLcdDim (0xff8b8e88),
+                   kLedOff (0xff4b4d4f);
+
+juce::FontOptions sans (float height, bool bold = true)
+{
+    return juce::FontOptions (height, bold ? juce::Font::bold : juce::Font::plain).withKerningFactor (0.03f);
+}
+
+juce::FontOptions mono (float height)
+{
+    return juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), height, juce::Font::bold);
+}
 
 juce::String noteName (int note)
 {
     // FL Studio llama C5 a la nota 60
     return note < 0 ? "--" : juce::MidiMessage::getMidiNoteName (note, true, true, 5);
 }
+
+/** Dibuja una tecla con relieve y devuelve el rectangulo de su cara superior. */
+juce::Rectangle<float> drawKey (juce::Graphics& g, juce::Rectangle<float> area, juce::Colour colour,
+                                bool down, float radius = 5.0f)
+{
+    const float travel = 3.0f;
+    area = area.reduced (1.0f);
+    auto face = area.withTrimmedBottom (travel);
+    if (down)
+        face = face.translated (0.0f, travel - 1.0f);
+
+    g.setColour (colour.darker (0.75f).withMultipliedAlpha (0.9f));
+    g.fillRoundedRectangle (area.withTrimmedTop (travel), radius);
+
+    g.setColour (colour);
+    g.fillRoundedRectangle (face, radius);
+    g.setColour (juce::Colours::white.withAlpha (0.14f));
+    g.drawRoundedRectangle (face.reduced (0.75f), radius, 1.0f);
+    return face;
+}
+
+void drawLed (juce::Graphics& g, juce::Point<float> centre, float radius, juce::Colour colour, bool on)
+{
+    if (on)
+    {
+        g.setColour (colour.withAlpha (0.25f));
+        g.fillEllipse (juce::Rectangle<float> (radius * 4.0f, radius * 4.0f).withCentre (centre));
+    }
+    g.setColour (on ? colour : kLedOff);
+    g.fillEllipse (juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (centre));
+}
+}
+
+//==============================================================================
+HardwareLook::HardwareLook()
+{
+    setColour (juce::ResizableWindow::backgroundColourId, kBody);
+    setColour (juce::Label::textColourId, kInk);
+    setColour (juce::Label::backgroundWhenEditingColourId, kDisplay);
+    setColour (juce::Label::textWhenEditingColourId, kLcd);
+    setColour (juce::Label::outlineWhenEditingColourId, kOrange);
+    setColour (juce::TextEditor::highlightColourId, kOrange.withAlpha (0.6f));
+    setColour (juce::TextEditor::highlightedTextColourId, juce::Colours::white);
+    setColour (juce::CaretComponent::caretColourId, kOrange);
+
+    setColour (juce::TextButton::buttonColourId, kKeyDark);
+    setColour (juce::TextButton::buttonOnColourId, kOrange);
+    setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+    setColour (juce::ToggleButton::textColourId, kInk);
+
+    setColour (juce::Slider::thumbColourId, kKeyDark);
+    setColour (juce::Slider::textBoxTextColourId, kInk);
+    setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+    setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    setColour (juce::Slider::textBoxHighlightColourId, kOrange.withAlpha (0.6f));
+
+    setColour (juce::ComboBox::textColourId, kInk);
+    setColour (juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    setColour (juce::PopupMenu::backgroundColourId, kKeyLight);
+    setColour (juce::PopupMenu::textColourId, kInk);
+    setColour (juce::PopupMenu::highlightedBackgroundColourId, kOrange);
+    setColour (juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
+}
+
+void HardwareLook::drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour& colour, bool over, bool down)
+{
+    drawKey (g, b.getLocalBounds().toFloat(), over && ! down ? colour.brighter (0.12f) : colour, down);
+}
+
+juce::Font HardwareLook::getTextButtonFont (juce::TextButton&, int)
+{
+    return juce::Font (sans (12.0f));
+}
+
+void HardwareLook::drawButtonText (juce::Graphics& g, juce::TextButton& b, bool, bool down)
+{
+    g.setFont (sans (12.0f));
+    g.setColour (b.findColour (b.getToggleState() ? juce::TextButton::textColourOnId : juce::TextButton::textColourOffId)
+                  .withMultipliedAlpha (b.isEnabled() ? 1.0f : 0.5f));
+    auto area = b.getLocalBounds().withTrimmedBottom (3);
+    if (down)
+        area = area.translated (0, 2);
+    g.drawText (b.getButtonText().toUpperCase(), area, juce::Justification::centred);
+}
+
+void HardwareLook::drawToggleButton (juce::Graphics& g, juce::ToggleButton& b, bool over, bool down)
+{
+    const auto face = drawKey (g, b.getLocalBounds().toFloat(), over ? kKeyLight.brighter (0.3f) : kKeyLight, down);
+    drawLed (g, { face.getX() + 13.0f, face.getCentreY() }, 3.5f, kOrange, b.getToggleState());
+    g.setFont (sans (11.5f));
+    g.setColour (kInk);
+    g.drawText (b.getButtonText().toUpperCase(), face.withTrimmedLeft (24.0f).withTrimmedRight (6.0f),
+                juce::Justification::centredLeft);
+}
+
+void HardwareLook::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, float pos,
+                                     float startAngle, float endAngle, juce::Slider& slider)
+{
+    const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (3.0f);
+    const float radius = std::min (bounds.getWidth(), bounds.getHeight()) * 0.5f;
+    const auto centre = bounds.getCentre();
+    const float angle = startAngle + pos * (endAngle - startAngle);
+
+    juce::Path track, value;
+    track.addCentredArc (centre.x, centre.y, radius - 2.0f, radius - 2.0f, 0.0f, startAngle, endAngle, true);
+    value.addCentredArc (centre.x, centre.y, radius - 2.0f, radius - 2.0f, 0.0f, startAngle, angle, true);
+    g.setColour (kBodyLine);
+    g.strokePath (track, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setColour (kOrange);
+    g.strokePath (value, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    const float capRadius = radius - 8.0f;
+    const auto cap = juce::Rectangle<float> (capRadius * 2.0f, capRadius * 2.0f).withCentre (centre);
+    const auto capColour = slider.findColour (juce::Slider::thumbColourId);
+    g.setColour (juce::Colours::black.withAlpha (0.25f));
+    g.fillEllipse (cap.translated (0.0f, 2.5f));
+    g.setColour (capColour);
+    g.fillEllipse (cap);
+    g.setColour (juce::Colours::white.withAlpha (0.16f));
+    g.drawEllipse (cap.reduced (1.0f), 1.0f);
+
+    juce::Path pointer;
+    pointer.addRoundedRectangle (-1.5f, -capRadius + 3.0f, 3.0f, capRadius * 0.55f, 1.5f);
+    g.setColour (juce::Colours::white);
+    g.fillPath (pointer, juce::AffineTransform::rotation (angle).translated (centre));
+}
+
+void HardwareLook::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
+                                     float, float, juce::Slider::SliderStyle, juce::Slider& slider)
+{
+    // un fader: ranura oscura y una tapa clara
+    const float alpha = slider.isEnabled() ? 1.0f : 0.4f;
+    const auto slot = juce::Rectangle<float> ((float) x, (float) y + (float) height * 0.5f - 3.0f, (float) width, 6.0f);
+    g.setColour (kKeyDark.withMultipliedAlpha (alpha));
+    g.fillRoundedRectangle (slot, 3.0f);
+    g.setColour (kOrange.withMultipliedAlpha (alpha));
+    g.fillRoundedRectangle (slot.withRight (sliderPos), 3.0f);
+
+    const auto cap = juce::Rectangle<float> (16.0f, std::min (24.0f, (float) height - 2.0f))
+                         .withCentre ({ sliderPos, (float) y + (float) height * 0.5f });
+    const auto face = drawKey (g, cap, kKeyLight.withMultipliedAlpha (alpha), false, 3.0f);
+    g.setColour (kInk.withMultipliedAlpha (alpha));
+    g.fillRect (juce::Rectangle<float> (2.0f, face.getHeight() - 8.0f).withCentre (face.getCentre()));
+}
+
+juce::Label* HardwareLook::createSliderTextBox (juce::Slider& slider)
+{
+    auto* label = LookAndFeel_V4::createSliderTextBox (slider);
+    label->setFont (mono (12.0f));
+    return label;
+}
+
+void HardwareLook::drawComboBox (juce::Graphics& g, int width, int height, bool, int, int, int, int, juce::ComboBox& box)
+{
+    const auto face = drawKey (g, juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height), kKeyLight, false);
+    juce::Path arrow;
+    const float cx = face.getRight() - 14.0f, cy = face.getCentreY();
+    arrow.startNewSubPath (cx - 4.0f, cy - 2.0f);
+    arrow.lineTo (cx, cy + 2.5f);
+    arrow.lineTo (cx + 4.0f, cy - 2.0f);
+    g.setColour (kInk.withAlpha (box.isEnabled() ? 1.0f : 0.4f));
+    g.strokePath (arrow, juce::PathStrokeType (1.8f));
+}
+
+void HardwareLook::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
+{
+    label.setBounds (8, 1, box.getWidth() - 32, box.getHeight() - 5);
+    label.setFont (getComboBoxFont (box));
+}
+
+juce::Font HardwareLook::getComboBoxFont (juce::ComboBox&)
+{
+    return juce::Font (sans (12.0f));
+}
+
+juce::Font HardwareLook::getPopupMenuFont()
+{
+    return juce::Font (sans (13.0f));
 }
 
 //==============================================================================
@@ -73,14 +265,23 @@ void WaveformView::rebuildPeaks()
 
 void WaveformView::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff14161a));
+    g.fillAll (kDisplay);
     const auto src = proc.getSource();
+    const float w = (float) getWidth(), h = (float) getHeight();
+    const float flagH = 15.0f;
+    const float mid = flagH + (h - flagH) * 0.5f;
+    const float halfH = (h - flagH) * 0.5f - 2.0f;
+
+    // linea central punteada, como una pantalla de segmentos
+    g.setColour (kLcdDim.withAlpha (0.35f));
+    for (float x = 0.0f; x < w; x += 6.0f)
+        g.fillRect (x, mid, 2.0f, 1.0f);
 
     if (src == nullptr)
     {
-        g.setColour (kDim);
-        g.setFont (juce::FontOptions (15.0f));
-        g.drawText (proc.getStatusText(), getLocalBounds(), juce::Justification::centred);
+        g.setColour (kOrange);
+        g.setFont (mono (14.0f));
+        g.drawText (proc.getStatusText().toUpperCase(), getLocalBounds(), juce::Justification::centred);
         return;
     }
 
@@ -89,8 +290,6 @@ void WaveformView::paint (juce::Graphics& g)
 
     const auto& slices = proc.getSlices();
     const int selected = proc.getSelectedPad();
-    const float h = (float) getHeight();
-    const float mid = h * 0.5f;
 
     // zona del pad elegido
     if (slices[(size_t) selected].used)
@@ -100,39 +299,42 @@ void WaveformView::paint (juce::Graphics& g)
             if (s.used && s.start > slices[(size_t) selected].start)
                 end = std::min (end, s.start);
         const float x0 = xForSample (slices[(size_t) selected].start);
-        g.setColour (kAccent.withAlpha (0.16f));
-        g.fillRect (x0, 0.0f, xForSample (end) - x0, h);
+        g.setColour (kOrange.withAlpha (0.22f));
+        g.fillRect (x0, flagH, xForSample (end) - x0, h - flagH);
     }
 
-    g.setColour (kWave);
+    g.setColour (kLcd);
     for (int x = 0; x < (int) peaks.size(); ++x)
     {
-        const float top = mid - peaks[(size_t) x].second * mid * 0.95f;
-        const float bottom = mid - peaks[(size_t) x].first * mid * 0.95f;
+        const float top = mid - peaks[(size_t) x].second * halfH;
+        const float bottom = mid - peaks[(size_t) x].first * halfH;
         g.fillRect ((float) x, top, 1.0f, std::max (1.0f, bottom - top));
     }
 
-    g.setFont (juce::FontOptions (11.0f));
-    for (int i = 0; i < eng::kNumPads; ++i)
-    {
-        if (! slices[(size_t) i].used)
-            continue;
-        const float x = xForSample (slices[(size_t) i].start);
-        const bool isSelected = i == selected;
-        g.setColour (isSelected ? kAccent : kText.withAlpha (0.8f));
-        g.fillRect (x, 0.0f, isSelected ? 2.0f : 1.0f, h);
-        const juce::Rectangle<float> flag (x, 0.0f, 18.0f, 14.0f);
-        g.fillRect (flag);
-        g.setColour (juce::Colours::black);
-        g.drawText (juce::String (i + 1), flag, juce::Justification::centred);
-    }
+    g.setFont (mono (10.0f));
+    for (int pass = 0; pass < 2; ++pass)   // el elegido se dibuja al final, arriba de todo
+        for (int i = 0; i < eng::kNumPads; ++i)
+        {
+            const bool isSelected = i == selected;
+            if (! slices[(size_t) i].used || isSelected != (pass == 1))
+                continue;
+            const float x = xForSample (slices[(size_t) i].start);
+            g.setColour (isSelected ? kOrange : kLcdDim);
+            g.fillRect (x, 0.0f, isSelected ? 2.0f : 1.0f, h);
+            const juce::Rectangle<float> flag (x, 0.0f, 17.0f, 13.0f);
+            g.setColour (isSelected ? kOrange : kLcd);
+            g.fillRoundedRectangle (flag, 2.0f);
+            g.fillRect (flag.withWidth (3.0f));
+            g.setColour (isSelected ? juce::Colours::white : kDisplay);
+            g.drawText (juce::String (i + 1), flag, juce::Justification::centred);
+        }
 
-    g.setColour (juce::Colours::white);
+    g.setColour (kOrange.brighter (0.5f));
     for (int i = 0; i < eng::kNumPads; ++i)
     {
         const float pos = proc.engine.padPlayPos[(size_t) i].load (std::memory_order_relaxed);
         if (pos >= 0.0f && pos <= 1.0f)
-            g.fillRect (pos * (float) getWidth(), 0.0f, 1.0f, h);
+            g.fillRect (pos * w, flagH, 1.5f, h - flagH);
     }
 }
 
@@ -203,25 +405,30 @@ void PadGrid::paint (juce::Graphics& g)
 
     for (int i = 0; i < eng::kNumPads; ++i)
     {
-        const auto r = padBounds (i).toFloat();
         const bool used = slices[(size_t) i].used;
         const bool playing = proc.engine.padPlayPos[(size_t) i].load (std::memory_order_relaxed) >= 0.0f;
+        const auto colour = playing ? kOrange : (used ? kKeyDark : kKeyGrey);
+        const auto face = drawKey (g, padBounds (i).toFloat(), colour, held == i || playing, 7.0f);
+        const auto inner = face.reduced (10.0f, 8.0f);
 
-        g.setColour (playing ? kAccent : (used ? kPad : kPadEmpty));
-        g.fillRoundedRectangle (r, 5.0f);
+        g.setColour (juce::Colours::white.withAlpha (used ? 1.0f : 0.75f));
+        g.setFont (sans (22.0f));
+        g.drawText (juce::String (i + 1), inner, juce::Justification::topLeft);
+
+        g.setFont (mono (11.0f));
+        g.setColour (juce::Colours::white.withAlpha (playing ? 0.95f : 0.6f));
+        if (i == learning)
+            g.drawText ("TOCA UNA NOTA", inner, juce::Justification::bottomLeft);
+        else if (used)
+            g.drawText (noteName (proc.engine.padNote[(size_t) i].load()), inner, juce::Justification::bottomLeft);
 
         if (i == selected)
         {
-            g.setColour (i == learning ? juce::Colours::yellow : kAccent);
-            g.drawRoundedRectangle (r.reduced (1.0f), 5.0f, 2.0f);
+            const auto ledColour = i == learning ? juce::Colours::yellow : (playing ? juce::Colours::white : kOrange);
+            drawLed (g, { inner.getRight() - 3.0f, inner.getY() + 6.0f }, 4.0f, ledColour, true);
+            g.setColour (ledColour);
+            g.fillRoundedRectangle (face.getX() + 10.0f, face.getBottom() - 5.0f, face.getWidth() - 20.0f, 2.5f, 1.25f);
         }
-
-        g.setColour (playing ? juce::Colours::black : (used ? kText : kDim));
-        g.setFont (juce::FontOptions (18.0f, juce::Font::bold));
-        g.drawText (juce::String (i + 1), r.reduced (8.0f, 6.0f), juce::Justification::topLeft);
-        g.setFont (juce::FontOptions (11.0f));
-        g.drawText (used ? noteName (proc.engine.padNote[(size_t) i].load()) : juce::String ("VACIO"),
-                    r.reduced (8.0f, 6.0f), juce::Justification::bottomLeft);
     }
 }
 
@@ -233,6 +440,7 @@ void PadGrid::mouseDown (const juce::MouseEvent& e)
     held = pad;
     proc.setSelectedPad (pad);
     proc.engine.triggerPadFromUI (pad, true);
+    repaint();
 }
 
 void PadGrid::mouseUp (const juce::MouseEvent&)
@@ -240,21 +448,14 @@ void PadGrid::mouseUp (const juce::MouseEvent&)
     if (held >= 0)
         proc.engine.triggerPadFromUI (held, false);
     held = -1;
+    repaint();
 }
 
 //==============================================================================
 SamplerEditor::SamplerEditor (SamplerProcessor& p)
     : AudioProcessorEditor (&p), proc (p), waveform (p), padGrid (p)
 {
-    auto& lf = getLookAndFeel();
-    lf.setColour (juce::Slider::rotarySliderFillColourId, kAccent);
-    lf.setColour (juce::Slider::thumbColourId, kText);
-    lf.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    lf.setColour (juce::TextButton::buttonColourId, kPad);
-    lf.setColour (juce::TextButton::buttonOnColourId, kAccent);
-    lf.setColour (juce::ComboBox::backgroundColourId, kPad);
-    lf.setColour (juce::ToggleButton::tickColourId, kAccent);
-    lf.setColour (juce::Label::textColourId, kText);
+    setLookAndFeel (&look);
 
     addAndMakeVisible (waveform);
     addAndMakeVisible (padGrid);
@@ -263,30 +464,36 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
         addAndMakeVisible (*b);
     for (auto* b : { &syncButton, &stretchButton, &monoButton, &keysButton, &reverseButton, &gateButton })
         addAndMakeVisible (*b);
-    for (auto* l : { &fileLabel, &bpmCaption, &bpmLabel, &statusLabel, &padTitle, &modeCaption, &gridCaption, &sensCaption })
-        addAndMakeVisible (*l);
     addAndMakeVisible (sensSlider);
     addAndMakeVisible (modeBox);
     addAndMakeVisible (gridBox);
 
-    bpmCaption.setText ("BPM", juce::dontSendNotification);
-    modeCaption.setText ("Cortar por", juce::dontSendNotification);
-    gridCaption.setText ("Grilla", juce::dontSendNotification);
-    sensCaption.setText ("Sensib.", juce::dontSendNotification);
-    sensSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    sensSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-    sensSlider.setRange (0.0, 1.0, 0.01);
-    sensSlider.setDoubleClickReturnValue (true, 0.5);
-    sensSlider.setValue (proc.getSensitivity(), juce::dontSendNotification);
-    sensSlider.onValueChange = [this] { proc.setSensitivity (sensSlider.getValue()); };
-    for (auto* l : { &bpmCaption, &modeCaption, &gridCaption, &sensCaption, &statusLabel })
-        l->setColour (juce::Label::textColourId, kDim);
-    statusLabel.setJustificationType (juce::Justification::centredRight);
-    padTitle.setFont (juce::FontOptions (16.0f, juce::Font::bold));
+    setupCaption (bpmCaption, "BPM", juce::Justification::centredRight);
+    setupCaption (tempoCaption, "TEMPO", juce::Justification::centredRight);
+    setupCaption (modeCaption, "CORTAR POR", juce::Justification::centredLeft);
+    setupCaption (gridCaption, "GRILLA", juce::Justification::centredLeft);
+    setupCaption (sensCaption, "SENSIB.", juce::Justification::centredLeft);
+    setupCaption (padTitle, "PAD", juce::Justification::centredLeft);
+    setupCaption (globalTitle, "GLOBAL", juce::Justification::centredLeft);
+    padTitle.setFont (sans (13.0f));
+    padTitle.setColour (juce::Label::textColourId, kInk);
+    globalTitle.setFont (sans (13.0f));
+    globalTitle.setColour (juce::Label::textColourId, kInk);
 
+    // textos de la pantalla
+    for (auto* l : { &fileLabel, &statusLabel })
+    {
+        addAndMakeVisible (*l);
+        l->setFont (mono (12.0f));
+        l->setMinimumHorizontalScale (0.7f);
+    }
+    fileLabel.setColour (juce::Label::textColourId, kLcd);
+    statusLabel.setColour (juce::Label::textColourId, kLcdDim);
+    statusLabel.setJustificationType (juce::Justification::centredRight);
+
+    setupLcd (bpmLabel);
+    setupLcd (tempoLabel);
     bpmLabel.setEditable (true);
-    bpmLabel.setColour (juce::Label::backgroundColourId, kPad);
-    bpmLabel.setJustificationType (juce::Justification::centred);
     bpmLabel.onTextChange = [this]
     {
         const double v = bpmLabel.getText().replaceCharacter (',', '.').getDoubleValue();
@@ -294,8 +501,25 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
             proc.setSampleBpm (v);
         refresh();
     };
+    tempoLabel.onTextChange = [this]
+    {
+        const double v = tempoLabel.getText().replaceCharacter (',', '.').getDoubleValue();
+        if (v > 0.0)
+            proc.setManualBpm (v);
+        refresh();
+    };
     halfButton.onClick = [this] { proc.setSampleBpm (proc.getSampleBpm() * 0.5); };
     doubleButton.onClick = [this] { proc.setSampleBpm (proc.getSampleBpm() * 2.0); };
+    for (auto* b : { &halfButton, &doubleButton })
+        b->setColour (juce::TextButton::buttonColourId, kKeyGrey);
+    sliceButton.setColour (juce::TextButton::buttonColourId, kOrange);
+
+    sensSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    sensSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    sensSlider.setRange (0.0, 1.0, 0.01);
+    sensSlider.setDoubleClickReturnValue (true, 0.5);
+    sensSlider.setValue (proc.getSensitivity(), juce::dontSendNotification);
+    sensSlider.onValueChange = [this] { proc.setSensitivity (sensSlider.getValue()); };
 
     modeBox.addItemList ({ "Golpes", "Grilla", "Partes iguales", "Al azar", "A mano (vacio)" }, 1);
     gridBox.addItemList (SamplerProcessor::gridNames(), 1);
@@ -337,6 +561,8 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     setupKnob (padPitch, "Tono", " st");
     setupKnob (padAttack, "Ataque", " ms");
     setupKnob (padRelease, "Release", " ms");
+    master.slider.setColour (juce::Slider::thumbColourId, kOrange);
+    padGain.slider.setColour (juce::Slider::thumbColourId, kKeyGrey);
 
     tune.attachment = std::make_unique<SliderAttachment> (proc.apvts, "tune", tune.slider);
     master.attachment = std::make_unique<SliderAttachment> (proc.apvts, "master", master.slider);
@@ -350,35 +576,51 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     monoAtt = std::make_unique<ButtonAttachment> (proc.apvts, "mono", monoButton);
     keysAtt = std::make_unique<ButtonAttachment> (proc.apvts, "keys", keysButton);
 
+    sendLookAndFeelChange();   // los controles ya creados toman el estilo nuevo
+
     proc.addChangeListener (this);
     refresh();
     startTimerHz (30);
-    setSize (940, 640);
+    setSize (1000, 720);
 }
 
 SamplerEditor::~SamplerEditor()
 {
     proc.removeChangeListener (this);
     proc.engine.learnPad.store (-1);
+    setLookAndFeel (nullptr);
+}
+
+void SamplerEditor::setupCaption (juce::Label& l, const juce::String& text, juce::Justification just)
+{
+    addAndMakeVisible (l);
+    l.setText (text, juce::dontSendNotification);
+    l.setFont (sans (10.0f));
+    l.setColour (juce::Label::textColourId, kInkDim);
+    l.setJustificationType (just);
+}
+
+void SamplerEditor::setupLcd (juce::Label& l)
+{
+    addAndMakeVisible (l);
+    l.setFont (mono (14.0f));
+    l.setColour (juce::Label::textColourId, kOrange);
+    l.setJustificationType (juce::Justification::centred);
 }
 
 void SamplerEditor::setupKnob (Knob& k, const juce::String& name, const juce::String& suffix)
 {
     k.slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    k.slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 70, 16);
+    k.slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 80, 16);
     k.slider.setTextValueSuffix (suffix);
-    k.label.setText (name, juce::dontSendNotification);
-    k.label.setJustificationType (juce::Justification::centred);
-    k.label.setColour (juce::Label::textColourId, kDim);
-    k.label.setFont (juce::FontOptions (12.0f));
     addAndMakeVisible (k.slider);
-    addAndMakeVisible (k.label);
+    setupCaption (k.label, name.toUpperCase(), juce::Justification::centred);
 }
 
 void SamplerEditor::layoutKnob (Knob& k, juce::Rectangle<int> area)
 {
-    k.label.setBounds (area.removeFromTop (16));
-    k.slider.setBounds (area);
+    k.label.setBounds (area.removeFromTop (14));
+    k.slider.setBounds (area.reduced (4, 0));
 }
 
 void SamplerEditor::attachPad (int pad)
@@ -411,17 +653,28 @@ void SamplerEditor::refresh()
     const int pad = proc.getSelectedPad();
     attachPad (pad);
 
-    fileLabel.setText (proc.getFileName().isEmpty() ? juce::String ("Sin audio") : proc.getFileName(),
+    fileLabel.setText (proc.getFileName().isEmpty() ? juce::String ("SIN AUDIO") : proc.getFileName(),
                        juce::dontSendNotification);
     if (! bpmLabel.isBeingEdited())
         bpmLabel.setText (juce::String (proc.getSampleBpm(), 2), juce::dontSendNotification);
-    statusLabel.setText (proc.getStatusText(), juce::dontSendNotification);
-    padTitle.setText ("PAD " + juce::String (pad + 1) + "   nota " + noteName (proc.engine.padNote[(size_t) pad].load()),
+    statusLabel.setText (proc.getSource() != nullptr ? proc.getStatusText().toUpperCase() : juce::String(),
+                         juce::dontSendNotification);
+    padTitle.setText ("PAD " + juce::String (pad + 1).paddedLeft ('0', 2) + "  /  NOTA "
+                          + noteName (proc.engine.padNote[(size_t) pad].load()),
                       juce::dontSendNotification);
     modeBox.setSelectedItemIndex ((int) proc.getSliceMode(), juce::dontSendNotification);
     gridBox.setSelectedItemIndex (proc.getGridIndex(), juce::dontSendNotification);
+    gridBox.setEnabled (proc.getSliceMode() == eng::SliceMode::grid);
     sensSlider.setValue (proc.getSensitivity(), juce::dontSendNotification);
     sensSlider.setEnabled (proc.getSliceMode() == eng::SliceMode::transients);
+
+    // el tempo destino: el del proyecto si llega; si no, se escribe a mano
+    const bool hostTempo = proc.hasHostTempo();
+    tempoCaption.setText (hostTempo ? "PROYECTO" : "TEMPO", juce::dontSendNotification);
+    if (tempoLabel.isEditable() == hostTempo)
+        tempoLabel.setEditable (! hostTempo);
+    if (! tempoLabel.isBeingEdited())
+        tempoLabel.setText (juce::String (proc.getTargetBpm(), 1), juce::dontSendNotification);
 
     if (proc.engine.learnPad.load() >= 0 && proc.engine.learnPad.load() != pad)
         proc.engine.learnPad.store (pad);   // el aprendizaje sigue al pad elegido
@@ -437,7 +690,14 @@ void SamplerEditor::timerCallback()
         refresh();
     }
 
-    statusLabel.setText (proc.getStatusText(), juce::dontSendNotification);
+    const bool hostTempo = proc.hasHostTempo();
+    if (tempoLabel.isEditable() == hostTempo)
+        refresh();
+    else if (hostTempo && ! tempoLabel.isBeingEdited())
+        tempoLabel.setText (juce::String (proc.getTargetBpm(), 1), juce::dontSendNotification);
+
+    statusLabel.setText (proc.getSource() != nullptr ? proc.getStatusText().toUpperCase() : juce::String(),
+                         juce::dontSendNotification);
     waveform.repaint();
     padGrid.repaint();
 }
@@ -452,73 +712,102 @@ void SamplerEditor::filesDropped (const juce::StringArray& files, int, int)
 
 void SamplerEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (kBg);
-    g.setColour (kPanel);
-    for (auto* c : { (juce::Component*) &padGrid })
-        g.fillRoundedRectangle (c->getBounds().expanded (6).toFloat(), 6.0f);
+    g.fillAll (kBody);
 
-    auto right = padGrid.getBounds().expanded (6);
-    right.setLeft (padGrid.getRight() + 18);
-    right.setRight (getWidth() - 12);
-    g.fillRoundedRectangle (right.toFloat(), 6.0f);
+    // marca
+    auto logo = logoBounds;
+    g.setColour (kInk);
+    g.setFont (sans (27.0f).withKerningFactor (-0.02f));
+    g.drawText (JucePlugin_Name, logo.removeFromLeft (128), juce::Justification::centredLeft);
+    g.setColour (kOrange);
+    g.fillRect (logo.removeFromLeft (4).reduced (0, 9));
+    logo.removeFromLeft (7);
+    g.setColour (kInkDim);
+    g.setFont (mono (9.0f));
+    g.drawFittedText ("16 PAD\nSLICE SAMPLER", logo, juce::Justification::centredLeft, 2);
+
+    // pantalla
+    g.setColour (kDisplay);
+    g.fillRoundedRectangle (displayBounds.toFloat(), 9.0f);
+    g.setColour (juce::Colours::white.withAlpha (0.08f));
+    g.drawRoundedRectangle (displayBounds.toFloat().reduced (3.0f), 6.5f, 1.0f);
+
+    // mini pantallas de tempo
+    g.setColour (kDisplay);
+    g.fillRoundedRectangle (bpmLabel.getBounds().toFloat(), 4.0f);
+    g.fillRoundedRectangle (tempoLabel.getBounds().toFloat(), 4.0f);
+
+    // lineas de seccion
+    g.setColour (kBodyLine);
+    for (auto* title : { &padTitle, &globalTitle })
+        g.fillRect (title->getX(), title->getBottom() + 1, getWidth() - 18 - title->getX(), 1);
+    g.fillRect (18, padGrid.getY() - 9, getWidth() - 36, 1);
 }
 
 void SamplerEditor::paintOverChildren (juce::Graphics& g)
 {
     if (dragOver)
     {
-        g.setColour (kAccent);
-        g.drawRect (getLocalBounds(), 3);
+        g.setColour (kOrange);
+        g.drawRoundedRectangle (displayBounds.toFloat().reduced (1.5f), 9.0f, 3.0f);
     }
 }
 
 void SamplerEditor::resized()
 {
-    auto area = getLocalBounds().reduced (12);
+    auto area = getLocalBounds().reduced (18, 14);
 
-    auto top = area.removeFromTop (30);
-    loadButton.setBounds (top.removeFromLeft (80));
-    top.removeFromLeft (8);
-    stretchButton.setBounds (top.removeFromRight (95));
-    syncButton.setBounds (top.removeFromRight (70));
+    // cabecera
+    auto top = area.removeFromTop (36);
+    logoBounds = top.removeFromLeft (232);
+    loadButton.setBounds (top.removeFromLeft (92).withSizeKeepingCentre (92, 32));
+    stretchButton.setBounds (top.removeFromRight (100).withSizeKeepingCentre (100, 32));
+    top.removeFromRight (6);
+    syncButton.setBounds (top.removeFromRight (80).withSizeKeepingCentre (80, 32));
+    top.removeFromRight (14);
+    tempoLabel.setBounds (top.removeFromRight (62).withSizeKeepingCentre (62, 26));
+    top.removeFromRight (4);
+    tempoCaption.setBounds (top.removeFromRight (64));
     top.removeFromRight (10);
-    doubleButton.setBounds (top.removeFromRight (34));
+    doubleButton.setBounds (top.removeFromRight (36).withSizeKeepingCentre (36, 32));
     top.removeFromRight (4);
-    halfButton.setBounds (top.removeFromRight (34));
+    halfButton.setBounds (top.removeFromRight (36).withSizeKeepingCentre (36, 32));
+    top.removeFromRight (6);
+    bpmLabel.setBounds (top.removeFromRight (70).withSizeKeepingCentre (70, 26));
     top.removeFromRight (4);
-    bpmLabel.setBounds (top.removeFromRight (70));
-    bpmCaption.setBounds (top.removeFromRight (40));
-    fileLabel.setBounds (top);
+    bpmCaption.setBounds (top.removeFromRight (34));
 
+    // pantalla
+    area.removeFromTop (10);
+    displayBounds = area.removeFromTop (214);
+    auto screen = displayBounds.reduced (12, 9);
+    auto info = screen.removeFromTop (18);
+    statusLabel.setBounds (info.removeFromRight (info.getWidth() / 2));
+    fileLabel.setBounds (info);
+    screen.removeFromTop (4);
+    waveform.setBounds (screen);
+
+    // fila de cortes
+    area.removeFromTop (10);
+    auto sliceRow = area.removeFromTop (32);
+    modeCaption.setBounds (sliceRow.removeFromLeft (84));
+    modeBox.setBounds (sliceRow.removeFromLeft (160));
+    sliceRow.removeFromLeft (18);
+    gridCaption.setBounds (sliceRow.removeFromLeft (54));
+    gridBox.setBounds (sliceRow.removeFromLeft (150));
+    sliceRow.removeFromLeft (18);
+    sensCaption.setBounds (sliceRow.removeFromLeft (58));
+    sensSlider.setBounds (sliceRow.removeFromLeft (150));
+    sliceButton.setBounds (sliceRow.removeFromRight (120));
+
+    // pads a la izquierda, controles a la derecha
+    area.removeFromTop (18);
+    padGrid.setBounds (area.removeFromLeft (400).expanded (4, 4).withTrimmedBottom (-2));
+    area.removeFromLeft (26);
+
+    padTitle.setBounds (area.removeFromTop (20));
     area.removeFromTop (8);
-    waveform.setBounds (area.removeFromTop (170));
-    area.removeFromTop (8);
-
-    auto sliceRow = area.removeFromTop (28);
-    modeCaption.setBounds (sliceRow.removeFromLeft (75));
-    modeBox.setBounds (sliceRow.removeFromLeft (130));
-    sliceRow.removeFromLeft (10);
-    gridCaption.setBounds (sliceRow.removeFromLeft (45));
-    gridBox.setBounds (sliceRow.removeFromLeft (120));
-    sliceRow.removeFromLeft (10);
-    sensCaption.setBounds (sliceRow.removeFromLeft (52));
-    sensSlider.setBounds (sliceRow.removeFromLeft (100));
-    sliceRow.removeFromLeft (10);
-    sliceButton.setBounds (sliceRow.removeFromLeft (80));
-    statusLabel.setBounds (sliceRow);
-
-    area.removeFromTop (14);
-    area.reduce (6, 0);
-    area.removeFromBottom (6);
-
-    padGrid.setBounds (area.removeFromLeft (470));
-    area.removeFromLeft (30);
-
-    // panel derecho: pad elegido arriba, global abajo
-    padTitle.setBounds (area.removeFromTop (24));
-    area.removeFromTop (4);
-
-    auto row1 = area.removeFromTop (100);
+    auto row1 = area.removeFromTop (102);
     const int kw = row1.getWidth() / 5;
     layoutKnob (padGain, row1.removeFromLeft (kw));
     layoutKnob (padPan, row1.removeFromLeft (kw));
@@ -527,20 +816,24 @@ void SamplerEditor::resized()
     layoutKnob (padRelease, row1);
 
     area.removeFromTop (8);
-    auto row2 = area.removeFromTop (26);
-    reverseButton.setBounds (row2.removeFromLeft (95));
-    gateButton.setBounds (row2.removeFromLeft (100));
-    learnButton.setBounds (row2.removeFromRight (120));
+    auto row2 = area.removeFromTop (32);
+    reverseButton.setBounds (row2.removeFromLeft (106));
+    row2.removeFromLeft (8);
+    gateButton.setBounds (row2.removeFromLeft (114));
+    learnButton.setBounds (row2.removeFromRight (140));
 
-    area.removeFromTop (20);
-    auto row3 = area.removeFromTop (100);
+    area.removeFromTop (18);
+    globalTitle.setBounds (area.removeFromTop (20));
+    area.removeFromTop (8);
+    auto row3 = area.removeFromTop (102);
     layoutKnob (master, row3.removeFromLeft (kw));
     layoutKnob (vel, row3.removeFromLeft (kw));
     layoutKnob (tune, row3.removeFromLeft (kw));
     layoutKnob (root, row3.removeFromLeft (kw));
 
     area.removeFromTop (8);
-    auto row4 = area.removeFromTop (26);
-    monoButton.setBounds (row4.removeFromLeft (95));
-    keysButton.setBounds (row4.removeFromLeft (100));
+    auto row4 = area.removeFromTop (32);
+    monoButton.setBounds (row4.removeFromLeft (106));
+    row4.removeFromLeft (8);
+    keysButton.setBounds (row4.removeFromLeft (114));
 }
