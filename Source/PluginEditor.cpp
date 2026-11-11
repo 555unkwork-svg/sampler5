@@ -721,6 +721,23 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     };
     refreshPresets();
 
+    //---- tamano de la ventana: se recuerda para todas las instancias
+    addAndMakeVisible (sizeBox);
+    static const int sizes[] = { 75, 100, 125, 150, 175, 200 };
+    for (int percent : sizes)
+        sizeBox.addItem ("Tam. " + juce::String (percent) + " %", percent);
+    const int saved = scaleSettingsFile().loadFileAsString().getIntValue();
+    userScale = (float) (sizeBox.indexOfItemId (saved) >= 0 ? saved : 100) / 100.0f;
+    sizeBox.setSelectedId ((int) std::lround (userScale * 100.0f), juce::dontSendNotification);
+    sizeBox.onChange = [this]
+    {
+        userScale = (float) sizeBox.getSelectedId() / 100.0f;
+        const auto file = scaleSettingsFile();
+        file.getParentDirectory().createDirectory();
+        file.replaceWithText (juce::String (sizeBox.getSelectedId()));
+        applyScale();
+    };
+
     //---- panel derecho: pestanas
     const char* tabNames[numTabs] = { "Pad", "Filtro", "Global", "Avanzado", "MIDI" };
     for (int i = 0; i < numTabs; ++i)
@@ -937,6 +954,25 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     refresh();
     startTimerHz (30);
     setSize (1000, 770);
+    applyScale();
+}
+
+juce::File SamplerEditor::scaleSettingsFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("sampler5").getChildFile ("tamano.txt");
+}
+
+void SamplerEditor::setScaleFactor (float newScale)
+{
+    hostScale = newScale > 0.0f ? newScale : 1.0f;
+    applyScale();
+}
+
+void SamplerEditor::applyScale()
+{
+    // todo se dibuja a 1000 x 770 y se agranda o achica entero: nada se desacomoda
+    setTransform (juce::AffineTransform::scale (hostScale * userScale));
 }
 
 SamplerEditor::~SamplerEditor()
@@ -1340,7 +1376,7 @@ void SamplerEditor::paint (juce::Graphics& g)
     g.setColour (kInkDim);
     g.setFont (sans (10.0f));
     g.drawText (juce::String ("V") + JucePlugin_VersionString,
-                presetFolderButton.getBounds().withX (presetFolderButton.getRight()).withRight (footerBounds.getRight()),
+                sizeBox.getBounds().withX (sizeBox.getRight()).withRight (footerBounds.getRight()),
                 juce::Justification::centredRight);
 }
 
@@ -1385,9 +1421,11 @@ void SamplerEditor::resized()
     presets.removeFromTop (3);
     auto presetButtons = presets.removeFromBottom (32);
     presetBox.setBounds (presets.removeFromTop (34));
-    presetSaveButton.setBounds (presetButtons.removeFromLeft (100));
+    presetSaveButton.setBounds (presetButtons.removeFromLeft (86));
+    presetButtons.removeFromLeft (4);
+    presetFolderButton.setBounds (presetButtons.removeFromLeft (86));
     presetButtons.removeFromLeft (6);
-    presetFolderButton.setBounds (presetButtons.removeFromLeft (100));
+    sizeBox.setBounds (presetButtons.removeFromLeft (112));
 
     //---- cabecera
     auto top = area.removeFromTop (36);

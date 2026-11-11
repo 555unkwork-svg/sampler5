@@ -39,6 +39,29 @@ struct Dumper final : juce::Timer
     }
 };
 
+struct Holder final : juce::Component, juce::ComponentListener
+{
+    juce::AudioProcessorEditor& editor;
+    explicit Holder (juce::AudioProcessorEditor& e) : editor (e)
+    {
+        setOpaque (true);
+        addAndMakeVisible (editor);
+        editor.addComponentListener (this);
+        fit();
+        addToDesktop (0);
+        setTopLeftPosition (0, 0);
+        setVisible (true);
+    }
+    ~Holder() override { editor.removeComponentListener (this); }
+    void paint (juce::Graphics& g) override { g.fillAll (juce::Colours::black); }
+    void componentMovedOrResized (juce::Component&, bool, bool) override { fit(); }
+    void fit()
+    {
+        const auto area = getLocalArea (&editor, editor.getLocalBounds());
+        setSize (area.getWidth(), area.getHeight());
+    }
+};
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI init;
@@ -48,11 +71,9 @@ int main (int argc, char** argv)
     if (argc > 1)
         proc->loadFile (juce::File (argv[1]));
 
+    // el editor va dentro de un contenedor, como hacen los DAW: la ventana sigue su tamano
     std::unique_ptr<juce::AudioProcessorEditor> editor (proc->createEditor());
-    editor->setOpaque (true);
-    editor->addToDesktop (0);
-    editor->setTopLeftPosition (0, 0);
-    editor->setVisible (true);
+    Holder holder (*editor);
 
     Dumper dumper (*proc, juce::File (argc > 2 ? argv[2] : "/tmp/ui_state.txt"));
 

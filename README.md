@@ -3,7 +3,7 @@
 Plugin VST3 para Windows: un audio, cortado en hasta 16 pads.
 Hecho con [JUCE 9](https://juce.com) y [Signalsmith Stretch](https://signalsmith-audio.co.uk/code/stretch/).
 
-## Que hace (v1.3)
+## Que hace (v1.4)
 
 - Carga WAV, AIFF, FLAC, MP3 u OGG (boton **CARGAR** o arrastrando el archivo). Hasta 2 minutos.
 - Detecta golpes y estima el BPM (usa tambien el largo del loop y el tempo del nombre del archivo).
@@ -33,6 +33,7 @@ Hecho con [JUCE 9](https://juce.com) y [Signalsmith Stretch](https://signalsmith
 - Con el mouse, los pads suenan mas fuerte cuanto mas arriba se hace clic. CORTE y RESONANCIA encienden el filtro solos.
 - **MUESTRA**: CARGAR, INV (el audio entero al reves) y SILENCIO (corta todo lo que suena).
 - **TONAL**: detecta la tonalidad del audio (o la toma del nombre del archivo, ej. `_A#m`).
+- **Tam.** (abajo a la derecha): tamano de la ventana, de 75 % a 200 %. Se recuerda para todas las instancias.
 - **PRESET**: kits con la ruta al audio, en `Documentos/sampler5/Presets` (GUARDAR, CARPETA, y Predeterminado para vaciar).
 - **SINCRO** sigue el tempo del proyecto (o el campo TEMPO si el host no lo informa); **ESTIRAR** lo hace sin cambiar el tono.
 - El proyecto del DAW guarda todo, incluido el audio (comprimido sin perdida), asi no se pierde si se mueve el archivo.

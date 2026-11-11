@@ -117,6 +117,9 @@ public:
     void fileDragExit (const juce::StringArray&) override { dragOver = false; repaint(); }
     void filesDropped (const juce::StringArray& files, int, int) override;
 
+    /** El host puede pedir su propia escala (pantallas de alta densidad): se combina con la elegida. */
+    void setScaleFactor (float newScale) override;
+
     enum PanelTab { tabPad = 0, tabFilter, tabGlobal, tabAdvanced, tabMidi, numTabs };
     void setPanelTab (int tab);
     void setViewMode (WaveformView::Mode);
@@ -142,6 +145,8 @@ private:
     void refreshPresets();
     void refreshKeyBox();
     void askPresetName();
+    void applyScale();
+    static juce::File scaleSettingsFile();
     void setPadGate (bool gate);
     void setupKnob (Knob&, const juce::String& name, const juce::String& suffix, int tab);
     void layoutKnob (Knob&, juce::Rectangle<int>);
@@ -206,6 +211,8 @@ private:
     juce::Label presetCaption;
     juce::ComboBox presetBox;
     juce::TextButton presetSaveButton { "Guardar" }, presetFolderButton { "Carpeta" };
+    juce::ComboBox sizeBox;
+    float hostScale = 1.0f, userScale = 1.0f;
     Knob root;
 
     // seccion MUESTRA
