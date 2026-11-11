@@ -54,10 +54,73 @@ void drawLed (juce::Graphics& g, juce::Point<float> centre, float radius, juce::
 }
 }
 
+namespace ui
+{
+namespace
+{
+struct Palette
+{
+    const char* name;
+    juce::uint32 body, line, ink, inkDim, keyDark, keyGrey, keyLight, accent, display, lcd, lcdDim, ledOff;
+};
+
+// Cada tema toma los colores de un aparato o sistema clasico (solo los colores, sin marcas ni logos).
+const Palette palettes[] =
+{
+    { "Chacarita", 0xffededea, 0xffcbccc7, 0xff141516, 0xff70736f, 0xff1e1f21, 0xffb3b5b1, 0xffffffff, 0xffd8121f, 0xff0b0c0d, 0xfff5f3ee, 0xff8d908a, 0xff55585a },
+    // interfaz de audio de aluminio con medidores verdes
+    { "Twin",      0xffc9ccce, 0xffa7abae, 0xff17191b, 0xff5d6266, 0xff2a2d30, 0xff9da2a6, 0xffeef0f1, 0xff22b84a, 0xff08090a, 0xffd9f2dc, 0xff5f7a64, 0xff474c4f },
+    // sampler de pads gris con pantalla naranja y botones rojos
+    { "Sample",    0xffd8d6d1, 0xffb4b1ab, 0xff1b1b1c, 0xff6a6863, 0xff4b4c4f, 0xffa9a8a4, 0xfff4f2ed, 0xffe2432a, 0xff101112, 0xfff2a33a, 0xff8f6a34, 0xff5a5a5c },
+    // consola de 16 bits gris con botones violetas
+    { "16 Bit",    0xffd0d0d7, 0xffadadb9, 0xff25252e, 0xff6b697c, 0xff55565f, 0xffa9a3cb, 0xfff0f0f5, 0xff5b49a6, 0xff16151c, 0xffe6e2f5, 0xff8681a2, 0xff5c5a68 },
+    // escritorio azul y verde de principios de los 2000
+    { "XP",        0xffece9d8, 0xffaca899, 0xff0c1630, 0xff5b6887, 0xff245edb, 0xff9dbaeb, 0xffffffff, 0xff3c9c3a, 0xff0a246a, 0xffffffff, 0xff9dbaeb, 0xff7f8aa8 },
+    // teclado controlador color arena con pads de luz azul
+    { "Lab",       0xffcbbaa5, 0xffa99780, 0xff1d1915, 0xff6c6052, 0xff1c1c1e, 0xffb09f89, 0xfff5f0e8, 0xff2f6bff, 0xff0c0c0e, 0xfff3efe9, 0xff8d8478, 0xff5b544b },
+};
+
+int themeIndex = 0;
+}
+
+juce::StringArray themeNames()
+{
+    juce::StringArray names;
+    for (const auto& p : palettes)
+        names.add (p.name);
+    return names;
+}
+
+int currentTheme() { return themeIndex; }
+
+void setTheme (int index)
+{
+    themeIndex = juce::jlimit (0, (int) std::size (palettes) - 1, index);
+    const auto& p = palettes[themeIndex];
+    kBody = juce::Colour (p.body);       kBodyLine = juce::Colour (p.line);
+    kInk = juce::Colour (p.ink);         kInkDim = juce::Colour (p.inkDim);
+    kKeyDark = juce::Colour (p.keyDark); kKeyGrey = juce::Colour (p.keyGrey);
+    kKeyLight = juce::Colour (p.keyLight);
+    kRed = juce::Colour (p.accent);
+    kDisplay = juce::Colour (p.display); kLcd = juce::Colour (p.lcd);
+    kLcdDim = juce::Colour (p.lcdDim);   kLedOff = juce::Colour (p.ledOff);
+}
+
+juce::Colour textOn (juce::Colour background)
+{
+    return background.getPerceivedBrightness() > 0.68f ? kInk : juce::Colours::white;
+}
+}
+
 using namespace ui;
 
 //==============================================================================
 HardwareLook::HardwareLook()
+{
+    applyTheme();
+}
+
+void HardwareLook::applyTheme()
 {
     setColour (juce::ResizableWindow::backgroundColourId, kBody);
     setColour (juce::Label::textColourId, kInk);
@@ -65,7 +128,7 @@ HardwareLook::HardwareLook()
     setColour (juce::Label::textWhenEditingColourId, kLcd);
     setColour (juce::Label::outlineWhenEditingColourId, kRed);
     setColour (juce::TextEditor::highlightColourId, kRed.withAlpha (0.6f));
-    setColour (juce::TextEditor::highlightedTextColourId, juce::Colours::white);
+    setColour (juce::TextEditor::highlightedTextColourId, textOn (kRed));
     setColour (juce::CaretComponent::caretColourId, kRed);
 
     setColour (juce::TextButton::buttonColourId, kKeyDark);
@@ -85,7 +148,7 @@ HardwareLook::HardwareLook()
     setColour (juce::PopupMenu::backgroundColourId, kKeyLight);
     setColour (juce::PopupMenu::textColourId, kInk);
     setColour (juce::PopupMenu::highlightedBackgroundColourId, kRed);
-    setColour (juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
+    setColour (juce::PopupMenu::highlightedTextColourId, textOn (kRed));
 }
 
 void HardwareLook::drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour& colour, bool over, bool down)
@@ -101,8 +164,9 @@ juce::Font HardwareLook::getTextButtonFont (juce::TextButton&, int)
 void HardwareLook::drawButtonText (juce::Graphics& g, juce::TextButton& b, bool, bool down)
 {
     g.setFont (sans (12.0f));
-    g.setColour (b.findColour (b.getToggleState() ? juce::TextButton::textColourOnId : juce::TextButton::textColourOffId)
-                  .withMultipliedAlpha (b.isEnabled() ? 1.0f : 0.5f));
+    const auto background = b.findColour (b.getToggleState() ? juce::TextButton::buttonOnColourId
+                                                             : juce::TextButton::buttonColourId);
+    g.setColour (textOn (background).withMultipliedAlpha (b.isEnabled() ? 1.0f : 0.5f));
     auto area = b.getLocalBounds().withTrimmedBottom (3);
     if (down)
         area = area.translated (0, 2);
@@ -147,7 +211,7 @@ void HardwareLook::drawRotarySlider (juce::Graphics& g, int x, int y, int width,
 
     juce::Path pointer;
     pointer.addRoundedRectangle (-1.5f, -capRadius + 3.0f, 3.0f, capRadius * 0.55f, 1.5f);
-    g.setColour (juce::Colours::white);
+    g.setColour (textOn (capColour));
     g.fillPath (pointer, juce::AffineTransform::rotation (angle).translated (centre));
 }
 

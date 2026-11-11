@@ -146,6 +146,8 @@ private:
     void refreshKeyBox();
     void askPresetName();
     void applyScale();
+    void applyTheme();
+    static juce::File themeSettingsFile();
     static juce::File scaleSettingsFile();
     void setPadGate (bool gate);
     void setupKnob (Knob&, const juce::String& name, const juce::String& suffix, int tab);
@@ -211,7 +213,9 @@ private:
     juce::Label presetCaption;
     juce::ComboBox presetBox;
     juce::TextButton presetSaveButton { "Guardar" }, presetFolderButton { "Carpeta" };
-    juce::ComboBox sizeBox;
+    juce::ComboBox sizeBox, themeBox;
+    std::vector<juce::Label*> captionLabels, lcdLabels;
+    juce::Rectangle<int> versionBounds;
     float hostScale = 1.0f, userScale = 1.0f;
     Knob root;
 

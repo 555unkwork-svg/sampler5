@@ -254,7 +254,7 @@ void WaveformView::paintSlices (juce::Graphics& g, bool editable)
             g.setColour ((isSelected ? kRed : kLcd).withMultipliedAlpha (dim));
             g.fillRoundedRectangle (flag, 2.0f);
             g.fillRect (flag.withWidth (3.0f));
-            g.setColour (isSelected ? juce::Colours::white : kDisplay);
+            g.setColour (isSelected ? textOn (kRed) : kDisplay);
             g.drawText (juce::String (i + 1), flag, juce::Justification::centred);
             if (s.favorite)
                 drawStar (g, { x + 24.0f, 6.5f }, 5.5f, kRed.withMultipliedAlpha (dim));
@@ -511,22 +511,23 @@ void PadGrid::paint (juce::Graphics& g)
         const auto face = drawKey (g, padBounds (i).toFloat(), colour, held == i || playing, 7.0f);
         const auto inner = face.reduced (9.0f, 6.0f);
 
-        g.setColour (juce::Colours::white.withAlpha (used ? 1.0f : 0.75f));
+        const auto text = textOn (colour);
+        g.setColour (text.withAlpha (used ? 1.0f : 0.75f));
         g.setFont (sans (20.0f));
         g.drawText (juce::String (i + 1), inner, juce::Justification::topLeft);
 
         g.setFont (mono (10.0f));
-        g.setColour (juce::Colours::white.withAlpha (playing ? 0.95f : 0.6f));
+        g.setColour (text.withAlpha (playing ? 0.95f : 0.6f));
         if (i == learning)
         {
             g.drawText ("TOCA UNA NOTA", inner, juce::Justification::bottomLeft);
         }
         else if (used)
         {
-            auto text = inner;
-            g.drawText (noteName (proc.engine.padNote[(size_t) i].load()), text.removeFromBottom (12.0f),
+            auto lines = inner;
+            g.drawText (noteName (proc.engine.padNote[(size_t) i].load()), lines.removeFromBottom (12.0f),
                         juce::Justification::centredLeft);
-            g.drawText (proc.getSliceName (i).toUpperCase(), text.removeFromBottom (12.0f),
+            g.drawText (proc.getSliceName (i).toUpperCase(), lines.removeFromBottom (12.0f),
                         juce::Justification::centredLeft, true);
         }
         else
@@ -537,14 +538,14 @@ void PadGrid::paint (juce::Graphics& g)
         float right = inner.getRight() - 3.0f;
         if (i == selected)
         {
-            const auto ledColour = i == learning ? juce::Colours::yellow : (playing ? juce::Colours::white : kRed);
+            const auto ledColour = i == learning ? juce::Colours::yellow : (playing ? textOn (kRed) : kRed);
             drawLed (g, { right, inner.getY() + 6.0f }, 4.0f, ledColour, true);
             g.setColour (ledColour);
             g.fillRoundedRectangle (face.getX() + 10.0f, face.getBottom() - 4.0f, face.getWidth() - 20.0f, 2.0f, 1.0f);
             right -= 16.0f;
         }
         if (used && slice.favorite)
-            drawStar (g, { right, inner.getY() + 6.0f }, 6.0f, playing ? juce::Colours::white : kRed);
+            drawStar (g, { right, inner.getY() + 6.0f }, 6.0f, playing ? textOn (kRed) : kRed);
     }
 }
 
@@ -582,6 +583,9 @@ void PadGrid::mouseUp (const juce::MouseEvent&)
 SamplerEditor::SamplerEditor (SamplerProcessor& p)
     : AudioProcessorEditor (&p), proc (p), waveform (p), overview (p, waveform), padGrid (p)
 {
+    // el tema guardado se carga antes de crear nada, asi todo nace con sus colores
+    setTheme (std::max (0, themeNames().indexOf (themeSettingsFile().loadFileAsString().trim())));
+    look.applyTheme();
     setLookAndFeel (&look);
    #if SAMPLER_HAS_CREST
     crest = juce::ImageCache::getFromMemory (BinaryData::escudo_png, BinaryData::escudo_pngSize);
@@ -725,7 +729,7 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     addAndMakeVisible (sizeBox);
     static const int sizes[] = { 75, 100, 125, 150, 175, 200 };
     for (int percent : sizes)
-        sizeBox.addItem ("Tam. " + juce::String (percent) + " %", percent);
+        sizeBox.addItem (juce::String (percent) + " %", percent);
     const int saved = scaleSettingsFile().loadFileAsString().getIntValue();
     userScale = (float) (sizeBox.indexOfItemId (saved) >= 0 ? saved : 100) / 100.0f;
     sizeBox.setSelectedId ((int) std::lround (userScale * 100.0f), juce::dontSendNotification);
@@ -736,6 +740,19 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
         file.getParentDirectory().createDirectory();
         file.replaceWithText (juce::String (sizeBox.getSelectedId()));
         applyScale();
+    };
+
+    //---- tema de color: tambien se recuerda para todas las instancias
+    addAndMakeVisible (themeBox);
+    themeBox.addItemList (themeNames(), 1);
+    themeBox.setSelectedId (currentTheme() + 1, juce::dontSendNotification);
+    themeBox.onChange = [this]
+    {
+        setTheme (themeBox.getSelectedId() - 1);
+        const auto file = themeSettingsFile();
+        file.getParentDirectory().createDirectory();
+        file.replaceWithText (themeNames()[currentTheme()]);
+        applyTheme();
     };
 
     //---- panel derecho: pestanas
@@ -955,6 +972,46 @@ SamplerEditor::SamplerEditor (SamplerProcessor& p)
     startTimerHz (30);
     setSize (1000, 770);
     applyScale();
+    applyTheme();
+}
+
+juce::File SamplerEditor::themeSettingsFile()
+{
+    return scaleSettingsFile().getSiblingFile ("tema.txt");
+}
+
+/** Vuelve a poner todos los colores segun el tema actual. */
+void SamplerEditor::applyTheme()
+{
+    look.applyTheme();
+
+    for (auto* l : captionLabels)
+        l->setColour (juce::Label::textColourId, kInkDim);
+    for (auto* l : lcdLabels)
+        l->setColour (juce::Label::textColourId, kRed);
+    for (auto* l : { &infoLabel, &sampleCaption, &presetCaption, &padTitle, &filterTitle, &globalTitle,
+                     &pitchTitle, &advancedTitle, &midiTitle })
+        l->setColour (juce::Label::textColourId, kInk);
+    fileLabel.setColour (juce::Label::textColourId, kLcd);
+    statusLabel.setColour (juce::Label::textColourId, kLcdDim);
+    nameLabel.setColour (juce::Label::textColourId, kRed);
+
+    for (auto* b : { &halfButton, &doubleButton, &detectButton, &navLeftButton, &navRightButton, &zoomOutButton,
+                     &zoomInButton, &presetFolderButton, &pitchDownButton, &pitchUpButton })
+        b->setColour (juce::TextButton::buttonColourId, kInkDim);
+    for (auto* b : { &loadButton, &silenceButton, &presetSaveButton, &pitchResetButton, &learnButton })
+    {
+        b->setColour (juce::TextButton::buttonColourId, kKeyDark);
+        b->setColour (juce::TextButton::buttonOnColourId, kRed);
+    }
+    resliceButton.setColour (juce::TextButton::buttonColourId, kRed);
+    master.slider.setColour (juce::Slider::thumbColourId, kRed);
+    tune.slider.setColour (juce::Slider::thumbColourId, kRed);
+
+    setPanelTab (currentTab);
+    setViewMode (waveform.getMode());
+    sendLookAndFeelChange();
+    refresh();
 }
 
 juce::File SamplerEditor::scaleSettingsFile()
@@ -997,6 +1054,7 @@ void SamplerEditor::setupCaption (juce::Label& l, const juce::String& text, juce
     l.setText (text, juce::dontSendNotification);
     l.setFont (sans (10.0f));
     l.setColour (juce::Label::textColourId, kInkDim);
+    captionLabels.push_back (&l);
     l.setJustificationType (just);
 }
 
@@ -1005,6 +1063,7 @@ void SamplerEditor::setupLcd (juce::Label& l)
     addAndMakeVisible (l);
     l.setFont (mono (14.0f));
     l.setColour (juce::Label::textColourId, kRed);
+    lcdLabels.push_back (&l);
     l.setJustificationType (juce::Justification::centred);
 }
 
@@ -1376,8 +1435,7 @@ void SamplerEditor::paint (juce::Graphics& g)
     g.setColour (kInkDim);
     g.setFont (sans (10.0f));
     g.drawText (juce::String ("V") + JucePlugin_VersionString,
-                sizeBox.getBounds().withX (sizeBox.getRight()).withRight (footerBounds.getRight()),
-                juce::Justification::centredRight);
+                versionBounds, juce::Justification::centredRight);
 }
 
 void SamplerEditor::paintOverChildren (juce::Graphics& g)
@@ -1417,15 +1475,18 @@ void SamplerEditor::resized()
     navLeftButton.setBounds (sampleButtons.removeFromRight (40));
 
     auto presets = footerBounds.withTrimmedLeft (sampleBounds.getRight() - footerBounds.getX() + 24);
+    versionBounds = presets.withHeight (16).removeFromRight (80);
     presetCaption.setBounds (presets.removeFromTop (16));
     presets.removeFromTop (3);
     auto presetButtons = presets.removeFromBottom (32);
     presetBox.setBounds (presets.removeFromTop (34));
-    presetSaveButton.setBounds (presetButtons.removeFromLeft (86));
+    presetSaveButton.setBounds (presetButtons.removeFromLeft (76));
     presetButtons.removeFromLeft (4);
-    presetFolderButton.setBounds (presetButtons.removeFromLeft (86));
+    presetFolderButton.setBounds (presetButtons.removeFromLeft (76));
     presetButtons.removeFromLeft (6);
-    sizeBox.setBounds (presetButtons.removeFromLeft (112));
+    themeBox.setBounds (presetButtons.removeFromRight (94));
+    presetButtons.removeFromRight (4);
+    sizeBox.setBounds (presetButtons);
 
     //---- cabecera
     auto top = area.removeFromTop (36);
